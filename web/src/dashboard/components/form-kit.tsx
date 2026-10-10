@@ -1,7 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import type { Hex } from "viem";
 import { type Reputation, hashDocument } from "@credoc/sdk";
-import { demoName } from "../../shared/demo";
 import { shortHex } from "../../shared/format";
 import { useWallet } from "../lib/wallet";
 
@@ -11,8 +10,8 @@ import { useWallet } from "../lib/wallet";
 export const prettyDoc = (label: string) =>
   label.startsWith("0x") ? `Document ${shortHex(label)}` : label.charAt(0) + label.slice(1).toLowerCase().replace(/_/g, " ");
 
-/** Demo name on the local fork, short hex otherwise. */
-export const partyName = (a: string) => demoName(a) ?? shortHex(a);
+/** How a party is shown: short hex. */
+export const partyName = (a: string) => shortHex(a);
 
 export type Hashed = { name: string; size: number; hash: Hex };
 

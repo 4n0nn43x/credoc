@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { LogoMark } from "../../shared/Logo";
-import { IS_LOCAL, chain } from "../../shared/config";
-import { PERSONAS, type PersonaId } from "../../shared/demo";
+import { chain } from "../../shared/config";
 import { humanError } from "../../shared/errors";
 import { useWallet } from "../lib/wallet";
 
@@ -83,37 +82,6 @@ export function Login() {
                 Network: {chain.name}. Fees are paid in USDC, a few thousandths of a dollar per action.
               </p>
             </div>
-
-            {IS_LOCAL && (
-              <>
-                <div className="d-flex align-items-center gap-2 my-4">
-                  <hr className="flex-grow-1 my-0" />
-                  <span className="micro-label">or try a demo wallet</span>
-                  <hr className="flex-grow-1 my-0" />
-                </div>
-                <div className="list-group">
-                  {PERSONAS.filter((p) => p.id !== "relayer").map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                      disabled={busy !== null}
-                      onClick={() => attempt(p.id, () => w.usePersona(p.id as PersonaId))}
-                    >
-                      <span>
-                        <span className="d-block fw-medium text-dark">{p.name}</span>
-                        <span className="d-block fs-12 text-muted">
-                          {p.role}
-                          {p.city && ` · ${p.city}`}
-                        </span>
-                      </span>
-                      {busy === p.id ? <i className="ti ti-loader-2 credoc-spin" /> : <i className="ti ti-arrow-right text-muted" />}
-                    </button>
-                  ))}
-                </div>
-                <p className="fs-12 text-muted mt-2 mb-0">Demo wallets exist only on this local fork of Arc mainnet.</p>
-              </>
-            )}
 
             <div className="d-flex justify-content-between flex-wrap gap-2 mt-4 pt-3 border-top border-dashed fs-13">
               <a href="/" className="link-secondary">

@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import type { Address, Hex } from "viem";
 import { docLabel } from "@credoc/sdk";
-import { demoName } from "../../shared/demo";
 import { amount, sameAddress, shortHex } from "../../shared/format";
 import type { Step } from "../lib/model";
 import type { ChainEvent, CreditRow, OfferRow } from "../lib/store";
@@ -18,11 +17,11 @@ export function prettyDoc(label: string): string {
 
 export const docName = (docTypeHash: unknown) => prettyDoc(docLabel(docTypeHash as Hex));
 
-/** "You", a demo name, or a short address. */
+/** "You" or a short address. */
 export function who(address: unknown, me?: Address | null): string {
   const a = String(address ?? "");
   if (sameAddress(a, me)) return "You";
-  return demoName(a) ?? shortHex(a);
+  return shortHex(a);
 }
 
 export const creditTitle = (c: CreditRow | undefined, id: unknown) => c?.ref || `credit #${String(id)}`;

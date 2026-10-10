@@ -2,8 +2,6 @@ import { Fragment, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { type Address, isAddress, parseUnits } from "viem";
 import { ARC, DOC_LABELS, type OpenParams, docType, validateOpenParams } from "@credoc/sdk";
-import { IS_LOCAL } from "../../shared/config";
-import { PERSONAS, personaAddress } from "../../shared/demo";
 import { dateShort, sameAddress } from "../../shared/format";
 import { Amount, Card, PageTitle } from "../components/ui";
 import { FeeNote, FileDrop, type Hashed, SignButton, partyName, prettyDoc } from "../components/form-kit";
@@ -40,8 +38,6 @@ const toUnits = (s: string): bigint | null => {
 const labelOf = (d: DocRow) =>
   d.label === CUSTOM ? d.custom.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "") : d.label;
 
-const exporters = PERSONAS.filter((p) => p.role === "Exporter");
-const attestors = PERSONAS.filter((p) => p.id === "forwarder" || p.id === "inspector");
 
 export function NewCredit() {
   const { address, balances } = useWallet();
@@ -193,18 +189,6 @@ export function NewCredit() {
                   <div className="col-12">
                     <label className="form-label" htmlFor="nc-exp">Exporter (who gets paid)</label>
                     <input id="nc-exp" className="form-control font-monospace" placeholder="0x…" value={f.beneficiary} onChange={(e) => set({ beneficiary: e.target.value.trim() })} />
-                    {IS_LOCAL && (
-                      <div className="d-flex flex-wrap gap-2 mt-2">
-                        {exporters.map((p) => {
-                          const a = personaAddress(p.id);
-                          return (
-                            <button key={p.id} type="button" className={`btn btn-sm ${sameAddress(a, f.beneficiary) ? "btn-light border-dark fw-semibold" : "btn-outline-light border text-dark"}`} onClick={() => set({ beneficiary: a })}>
-                              {p.name}<span className="opacity-75 fs-11 ms-1 d-none d-sm-inline">· {p.city}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                   <div className="col-md-6">
                     <span className="form-label d-block">Currency</span>
@@ -263,18 +247,6 @@ export function NewCredit() {
                               <i className="ti ti-trash" />
                             </button>
                           </div>
-                          {IS_LOCAL && (
-                            <div className="col-12 d-flex flex-wrap gap-2">
-                              {attestors.map((p) => {
-                                const a = personaAddress(p.id);
-                                return (
-                                  <button key={p.id} type="button" className={`btn btn-sm ${sameAddress(a, d.attestor) ? "btn-light border-dark fw-semibold" : "btn-outline-light border text-dark"}`} onClick={() => setDoc(i, { attestor: a })}>
-                                    {p.name}<span className="opacity-75 fs-11 ms-1">· {p.role}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
                         </div>
                       </div>
                     ))}

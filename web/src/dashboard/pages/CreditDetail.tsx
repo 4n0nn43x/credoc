@@ -63,7 +63,8 @@ export function CreditDetail() {
     }, 700);
   };
 
-  if (load === "loading" || (load !== "ready" && !c))
+  // "unconfigured" (no contract yet) falls through to the not-found state instead of loading forever
+  if (load === "loading" || (load === "error" && !c))
     return (
       <>
         <PageTitle title={`Credit #${id}`} subtitle="Reading the chain…" />

@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ARC, type Reputation } from "@credoc/sdk";
-import { PERSONAS } from "../../shared/demo";
 import { dateShort, sameAddress } from "../../shared/format";
 import { Addr, Amount, Card, Empty, PageTitle, Skeleton } from "../components/ui";
 import { FeeNote, SignButton, recordFacts } from "../components/form-kit";
@@ -91,19 +90,18 @@ function Passport({ id, version, roles }: { id: bigint; version: number; roles?:
 }
 
 export function Identity() {
-  const { address, persona } = useWallet();
+  const { address } = useWallet();
   const { credits, events } = useStore();
   const { run } = useTx();
   const [bump, setVersion] = useState(0);
   const version = bump + events.length; // re-read records whenever new events land
   const [created, setCreated] = useState<bigint[]>([]);
-  const p = PERSONAS.find((x) => x.id === persona);
   const [uri, setUri] = useState("");
   const [lookup, setLookup] = useState("");
   const [looked, setLooked] = useState<bigint | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const defaultUri = `data:application/json,${encodeURIComponent(JSON.stringify({ name: p?.name ?? "Credoc trader", role: p?.role ?? "Trader" }))}`;
+  const defaultUri = `data:application/json,${encodeURIComponent(JSON.stringify({ name: "Credoc trader", role: "Trader" }))}`;
   useEffect(() => setUri(defaultUri), [defaultUri]);
 
   // my identities, as discovered from the credits where I am a party

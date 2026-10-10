@@ -3,7 +3,6 @@ import ApexCharts, { type ApexOptions } from "apexcharts";
 import type { Address } from "viem";
 import { ARC } from "@credoc/sdk";
 import { explorerAddress, explorerTx } from "../../shared/config";
-import { demoName } from "../../shared/demo";
 import { amountParts, sameAddress, shortHex, utc, relative } from "../../shared/format";
 import type { StatusInfo } from "../lib/model";
 import { useStore } from "../lib/store";
@@ -76,25 +75,21 @@ function useCopy() {
   };
 }
 
-/** Address with its demo name (local fork), short hex, copy and explorer link. */
+/** Address as short hex (or "You"), with copy and explorer link. */
 export function Addr({ address, me, plain }: { address: string; me?: Address | null; plain?: boolean }) {
   const { copied, copy } = useCopy();
-  const name = demoName(address);
   const you = sameAddress(address, me);
-  const link = explorerAddress(address);
-  if (plain) return <span>{you ? "You" : (name ?? shortHex(address))}</span>;
+  if (plain) return <span>{you ? "You" : shortHex(address)}</span>;
   return (
     <span className="d-inline-flex align-items-center gap-1">
-      <span className="fw-medium text-dark">{you ? "You" : (name ?? shortHex(address))}</span>
-      {(name || you) && <span className="hash text-muted">{shortHex(address)}</span>}
+      <span className="fw-medium text-dark">{you ? "You" : shortHex(address)}</span>
+      {you && <span className="hash text-muted">{shortHex(address)}</span>}
       <button type="button" className="btn btn-link p-0 text-muted" onClick={() => copy(address)} aria-label="Copy address" title={copied ? "Copied" : "Copy"}>
         <i className={`ti ${copied ? "ti-check" : "ti-copy"} fs-14`} />
       </button>
-      {link && (
-        <a href={link} target="_blank" rel="noreferrer" className="text-muted" aria-label="Open in explorer">
-          <i className="ti ti-external-link fs-14" />
-        </a>
-      )}
+      <a href={explorerAddress(address)} target="_blank" rel="noreferrer" className="text-muted" aria-label="Open in explorer">
+        <i className="ti ti-external-link fs-14" />
+      </a>
     </span>
   );
 }
@@ -127,7 +122,7 @@ export function StatusBadge({ s }: { s: StatusInfo }) {
   );
 }
 
-/** Relative time with the exact UTC time on hover. Defaults to chain time: a local fork may run ahead of the wall clock. */
+/** Relative time with the exact UTC time on hover. Defaults to chain time, as the contract sees it. */
 export function When({ ts, now }: { ts: number | bigint; now?: number }) {
   const store = useStore();
   return (

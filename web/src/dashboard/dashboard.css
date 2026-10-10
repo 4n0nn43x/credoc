@@ -60,3 +60,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 
 .credoc-login { background: var(--credoc-paper); }
 .credoc-login .card { border: 1px solid var(--osen-border-color); }
+
+/* sidebar footer note: icon only when the sidebar is condensed to icons */
+html[data-sidenav-size="condensed"] .credoc-sidenav-note { padding-left: 0 !important; padding-right: 0 !important; text-align: center; }
+html[data-sidenav-size="condensed"] .credoc-sidenav-note > div:first-child { justify-content: center; }
+html[data-sidenav-size="condensed"] .credoc-sidenav-note .note-text { display: none; }

@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { CommandPalette, Kbd, MOD, useShortcuts } from "./CommandPalette";
 import { LogoMark } from "../../shared/Logo";
-import { CREDOC_ADDRESS, IS_LOCAL, chain, explorerAddress } from "../../shared/config";
-import { PERSONAS, type PersonaId } from "../../shared/demo";
+import { CREDOC_ADDRESS, chain, explorerAddress } from "../../shared/config";
 import { amount, shortHex } from "../../shared/format";
 import { pendingActions } from "../lib/model";
 import { useStore } from "../lib/store";
@@ -69,19 +68,16 @@ function Sidenav({ actionCount, close }: { actionCount: number; close: () => voi
             ...section.items.map((it) => <NavItem key={it.to} {...it} count={it.badge ? actionCount : 0} close={close} />),
           ])}
         </ul>
-        <div className="px-4 py-3 mt-2 border-top border-dashed fs-12 text-muted">
+        <div className="credoc-sidenav-note px-4 py-3 mt-2 border-top border-dashed fs-12 text-muted" title="Funds are held by the contract, never by Credoc.">
           <div className="d-flex align-items-center gap-1">
-            <i className="ti ti-lock" /> Funds are held by the contract, never by Credoc.
+            <i className="ti ti-lock" aria-hidden="true" />
+            <span className="note-text">Funds are held by the contract, never by Credoc.</span>
           </div>
           {CREDOC_ADDRESS && (
-            <div className="mt-1 hash">
-              {explorerAddress(CREDOC_ADDRESS) ? (
-                <a href={explorerAddress(CREDOC_ADDRESS)!} target="_blank" rel="noreferrer" className="link-secondary">
-                  {shortHex(CREDOC_ADDRESS)} <i className="ti ti-external-link" />
-                </a>
-              ) : (
-                shortHex(CREDOC_ADDRESS)
-              )}
+            <div className="mt-1 hash note-text">
+              <a href={explorerAddress(CREDOC_ADDRESS)} target="_blank" rel="noreferrer" className="link-secondary">
+                {shortHex(CREDOC_ADDRESS)} <i className="ti ti-external-link" />
+              </a>
             </div>
           )}
         </div>
@@ -120,7 +116,6 @@ function Topbar({ toggle, openPalette }: { toggle: () => void; openPalette: () =
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const persona = PERSONAS.find((p) => p.id === w.persona);
 
   return (
     <header className="app-topbar">
@@ -160,7 +155,7 @@ function Topbar({ toggle, openPalette }: { toggle: () => void; openPalette: () =
               <button className="topbar-link btn btn-outline-light text-dark px-2 d-flex align-items-center gap-2" onClick={() => setOpen(!open)} aria-expanded={open}>
                 <i className="ti ti-wallet fs-18" />
                 <span className="d-none d-md-inline text-start lh-sm">
-                  <span className="d-block fw-semibold">{persona ? persona.name : shortHex(w.address)}</span>
+                  <span className="d-block fw-semibold">{shortHex(w.address)}</span>
                   {w.balances && (
                     <span className="d-block fs-11 text-muted num">
                       {amount(w.balances.usdc)} USDC · {amount(w.balances.eurc)} EURC
@@ -176,28 +171,6 @@ function Topbar({ toggle, openPalette }: { toggle: () => void; openPalette: () =
             )}
             {open && (
               <div className="dropdown-menu dropdown-menu-end show p-2" style={{ right: 0, left: "auto", minWidth: 280, top: "calc(100% + 8px)" }}>
-                {IS_LOCAL && (
-                  <>
-                    <div className="micro-label px-2 pt-1 pb-2">View as (local demo)</div>
-                    {PERSONAS.filter((p) => p.id !== "relayer").map((p) => (
-                      <button
-                        key={p.id}
-                        className={`dropdown-item rounded d-flex justify-content-between align-items-center ${w.persona === p.id ? "active" : ""}`}
-                        onClick={() => {
-                          void w.usePersona(p.id as PersonaId);
-                          setOpen(false);
-                        }}
-                      >
-                        <span>
-                          <span className="d-block fw-medium">{p.name}</span>
-                          <span className="d-block fs-12 text-muted">{p.role}</span>
-                        </span>
-                        {w.persona === p.id && <i className="ti ti-check" />}
-                      </button>
-                    ))}
-                    <div className="dropdown-divider" />
-                  </>
-                )}
                 {w.hasInjected && w.kind !== "injected" && (
                   <button className="dropdown-item rounded" onClick={() => void w.connect().then(() => setOpen(false))}>
                     <i className="ti ti-plug me-1" /> Connect browser wallet
@@ -254,7 +227,7 @@ export function Layout() {
         <div className="page-container">
           {status === "unconfigured" && (
             <div className="alert alert-warning mt-3">
-              No contract is configured. Run <code>npm run seed</code> against a local arc-anvil fork, or set <code>VITE_CREDOC_ADDRESS</code>.
+              Credoc is not deployed on Arc mainnet yet: set <code>VITE_CREDOC_ADDRESS</code> once the contract is live.
             </div>
           )}
           {status === "error" && <div className="alert alert-danger mt-3">Cannot reach the network: {error}</div>}

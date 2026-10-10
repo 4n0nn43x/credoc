@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_NETWORK?: string;
   readonly VITE_RPC_URL?: string;
   readonly VITE_CREDOC_ADDRESS?: string;
   readonly VITE_CREDOC_FROM_BLOCK?: string;

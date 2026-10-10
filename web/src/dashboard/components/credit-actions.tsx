@@ -117,7 +117,7 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
                 : null;
   const btn = (key: string) => (primary === key ? "btn-dark" : "btn-outline-dark");
   const id = c.id;
-  const signHint = !me ? "Connect a wallet or choose a persona in the top bar." : undefined;
+  const signHint = !me ? "Connect a wallet in the top bar." : undefined;
 
   const firstPartial = missing.find((m) => m.partial);
   const [waiveKey, setWaiveKey] = useState(firstPartial ? `${firstPartial.ti}-${firstPartial.doc}` : "");
@@ -340,10 +340,10 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
         <div className="card-body">
           <div className="micro-label mb-2">Action required</div>
           <p className="fs-13 text-muted mb-2">You are viewing this credit read-only. Pick a wallet to see what you can do on it.</p>
-          <button type="button" className="btn btn-sm btn-dark" disabled title="Connect a wallet or choose a persona in the top bar.">
+          <button type="button" className="btn btn-sm btn-dark" disabled title="Connect a wallet in the top bar.">
             Connect to sign
           </button>
-          <div className="fs-12 text-muted mt-1">Use the wallet menu or "View as" in the top bar.</div>
+          <div className="fs-12 text-muted mt-1">Sign in with your wallet from the top bar.</div>
         </div>
       </div>
     );

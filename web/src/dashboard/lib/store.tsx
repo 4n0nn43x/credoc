@@ -45,7 +45,7 @@ type Store = {
   byId: Map<string, CreditRow>;
   offers: OfferRow[]; // newest first
   events: ChainEvent[]; // newest first, all credits
-  /** chain time in seconds, extrapolated from the latest block (a local fork may run ahead of the wall clock) */
+  /** chain time in seconds, extrapolated from the latest block: the clock the contract uses for expiries */
   now: () => number;
   refresh: () => Promise<void>;
 };

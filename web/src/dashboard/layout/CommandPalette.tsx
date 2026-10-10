@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { IS_LOCAL } from "../../shared/config";
-import { PERSONAS, type PersonaId, demoName } from "../../shared/demo";
+import { shortHex } from "../../shared/format";
 import { Amount, StatusBadge } from "../components/ui";
 import { status } from "../lib/model";
 import { useStore } from "../lib/store";
-import { useWallet } from "../lib/wallet";
 
 export const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 export const MOD = IS_MAC ? "⌘" : "Ctrl";
@@ -77,7 +75,6 @@ type Item = { id: string; group: string; run: () => void; render: React.ReactNod
 export function CommandPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const { credits, now } = useStore();
-  const w = useWallet();
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -97,8 +94,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     const t = now();
     const out: Item[] = [];
     for (const c of credits) {
-      const counterparty = demoName(c.beneficiary) ?? "";
-      const text = `#${c.id} ${c.ref} ${counterparty} ${demoName(c.applicant) ?? ""}`.toLowerCase();
+      const counterparty = shortHex(c.beneficiary);
+      const text = `#${c.id} ${c.ref} ${c.beneficiary} ${c.applicant}`.toLowerCase();
       if (term && !text.includes(term) && c.id.toString() !== term) continue;
       out.push({
         id: `credit-${c.id}`,
@@ -138,29 +135,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         ),
       });
     }
-    if (IS_LOCAL) {
-      for (const p of PERSONAS.filter((x) => x.id !== "relayer")) {
-        const label = `View as ${p.name}`;
-        if (term && !`${label} ${p.role}`.toLowerCase().includes(term)) continue;
-        out.push({
-          id: `persona-${p.id}`,
-          group: "Demo wallets",
-          text: label,
-          run: () => void w.usePersona(p.id as PersonaId),
-          render: (
-            <>
-              <i className="ti ti-user-circle fs-18 text-muted" />
-              <span className="flex-grow-1 text-dark">
-                {label} <span className="text-muted fs-12">{p.role}</span>
-              </span>
-              {w.persona === p.id && <i className="ti ti-check" />}
-            </>
-          ),
-        });
-      }
-    }
     return out;
-  }, [q, credits, now, navigate, w]);
+  }, [q, credits, now, navigate]);
 
   useEffect(() => setActive(0), [q]);
   useEffect(() => {
@@ -204,7 +180,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={onKeyDown}
                 className="form-control border-0 shadow-none py-3 fs-15"
-                placeholder="Search credits, pages, wallets…"
+                placeholder="Search credits by number, PO or address, or pages…"
                 role="combobox"
                 aria-expanded="true"
                 aria-controls="credoc-palette-list"

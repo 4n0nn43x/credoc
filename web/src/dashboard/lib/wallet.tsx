@@ -5,17 +5,12 @@ import {
   type Chain,
   type Transport,
   type WalletClient,
-  createTestClient,
   createWalletClient,
   custom,
-  http,
   numberToHex,
-  parseUnits,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { ARC } from "@credoc/sdk";
-import { IS_LOCAL, chain } from "../../shared/config";
-import { type PersonaId, PERSONAS, personaKey } from "../../shared/demo";
+import { chain } from "../../shared/config";
 import { publicClient } from "./clients";
 
 export type Wallet = WalletClient<Transport, Chain, Account>;
@@ -23,22 +18,20 @@ export type Wallet = WalletClient<Transport, Chain, Account>;
 type State = {
   address: Address | null;
   wallet: Wallet | null;
-  /** false until the previous session (demo persona or browser wallet) has been restored or ruled out */
+  /** false until the previous session has been restored or ruled out */
   ready: boolean;
-  kind: "injected" | "demo" | null;
-  persona: PersonaId | null;
+  kind: "injected" | null;
   wrongChain: boolean;
   hasInjected: boolean;
   balances: { usdc: bigint; eurc: bigint } | null;
   connect: () => Promise<void>;
-  usePersona: (id: PersonaId) => Promise<void>;
   disconnect: () => void;
   switchChain: () => Promise<void>;
   refreshBalances: () => Promise<void>;
 };
 
 const Ctx = createContext<State | null>(null);
-/** Remembers how the user signed in: "injected" or a demo persona id. Never a key or an address. */
+/** Remembers that the user signed in with a browser wallet. Never a key or an address. */
 const SESSION_KEY = "credoc.session";
 const remember = (v: string | null) => {
   try {
@@ -59,7 +52,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [kind, setKind] = useState<State["kind"]>(null);
   const kindRef = useRef<State["kind"]>(null); // read by long-lived wallet event listeners
   kindRef.current = kind;
-  const [persona, setPersona] = useState<PersonaId | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [balances, setBalances] = useState<State["balances"]>(null);
   const [ready, setReady] = useState(false);
@@ -81,32 +73,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     void refreshBalances();
   }, [refreshBalances]);
 
-  const usePersona = useCallback(async (id: PersonaId) => {
-    if (!IS_LOCAL) throw new Error("Demo personas exist only on the local fork");
-    const account = privateKeyToAccount(personaKey(id));
-    // attestors stay at zero balance on purpose: they only sign, the relayer pays
-    const unfunded = id === "forwarder" || id === "inspector";
-    if (!unfunded) {
-      const bal = await publicClient.getBalance({ address: account.address });
-      if (bal < parseUnits("1000", 18)) {
-        const test = createTestClient({ chain, mode: "anvil", transport: http() });
-        await test.setBalance({ address: account.address, value: parseUnits("25000", 18) }); // native USDC
-      }
-    }
-    setWallet(createWalletClient({ account, chain, transport: http() }));
-    setAddress(account.address);
-    setKind("demo");
-    setPersona(id);
-    setChainId(chain.id);
-    remember(id);
-  }, []);
-
   const bindInjected = useCallback(async (addr: Address) => {
     const eth = window.ethereum!;
     setWallet(createWalletClient({ account: addr, chain, transport: custom(eth) }) as Wallet);
     setAddress(addr);
     setKind("injected");
-    setPersona(null);
     setChainId(Number(await eth.request({ method: "eth_chainId" })));
   }, []);
 
@@ -123,7 +94,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setWallet(null);
     setAddress(null);
     setKind(null);
-    setPersona(null);
     remember(null);
   }, []);
 
@@ -143,7 +113,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             chainName: chain.name,
             nativeCurrency: chain.nativeCurrency,
             rpcUrls: chain.rpcUrls.default.http as string[],
-            blockExplorerUrls: IS_LOCAL ? undefined : ["https://explorer.arc.io"],
+            blockExplorerUrls: ["https://explorer.arc.io"],
           },
         ],
       });
@@ -160,7 +130,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
     const restore = async () => {
-      if (IS_LOCAL && saved && PERSONAS.some((p) => p.id === saved)) return usePersona(saved as PersonaId);
       if (saved === "injected" && window.ethereum) {
         // eth_accounts never opens a popup: it only returns accounts the user already authorized
         const [addr] = (await window.ethereum.request({ method: "eth_accounts" })) as Address[];
@@ -185,7 +154,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       eth.removeListener?.("accountsChanged", onAccounts as never);
       eth.removeListener?.("chainChanged", onChain as never);
     };
-  }, [usePersona, bindInjected, disconnect]);
+  }, [bindInjected, disconnect]);
 
   const value = useMemo<State>(
     () => ({
@@ -193,17 +162,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       wallet,
       ready,
       kind,
-      persona,
       wrongChain: kind === "injected" && chainId !== null && chainId !== chain.id,
       hasInjected,
       balances,
       connect,
-      usePersona,
       disconnect,
       switchChain,
       refreshBalances,
     }),
-    [address, wallet, ready, kind, persona, chainId, hasInjected, balances, connect, usePersona, disconnect, switchChain, refreshBalances],
+    [address, wallet, ready, kind, chainId, hasInjected, balances, connect, disconnect, switchChain, refreshBalances],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

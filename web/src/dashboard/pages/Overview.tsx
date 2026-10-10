@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { ARC, type Reputation } from "@credoc/sdk";
 import { Amount, Card, Chart, Empty, PageTitle, Skeleton, When, tokenSymbol } from "../components/ui";
 import { CreditStyles, EventLine, describe } from "../components/credit-kit";
-import { demoName } from "../../shared/demo";
 import { dateShort, sameAddress, shortHex } from "../../shared/format";
 import { pendingActions } from "../lib/model";
 import { reader } from "../lib/clients";
@@ -45,7 +44,7 @@ function Kpi({ label, hint, children }: { label: string; hint: string; children:
 
 export function Overview() {
   const { status, credits, byId, offers, events, now } = useStore();
-  const { address, persona } = useWallet();
+  const { address } = useWallet();
   const t = now();
   const me = address;
 
@@ -114,10 +113,9 @@ export function Overview() {
     .filter((x) => x.d)
     .slice(0, 8);
 
-  const name = persona ? demoName(address ?? "") : null;
   const subtitle = address
-    ? `Signed in as ${name ?? shortHex(address)}. Figures below are for this wallet.`
-    : "Choose a wallet in the top bar (or View as a demo persona) to see what is waiting for you.";
+    ? `Signed in as ${shortHex(address)}. Figures below are for this wallet.`
+    : "Connect a wallet to see what is waiting for you.";
 
   if (status === "loading")
     return (
@@ -168,7 +166,7 @@ export function Overview() {
           <Card title="To do" action={todo.length ? <span className="badge-soft tone-dark num">{todo.length}</span> : undefined} className="h-100">
             {!me ? (
               <Empty icon="ti-wallet" title="No wallet selected">
-                Pick a wallet or a demo persona in the top bar. Tasks are worked out from your role on each credit.
+                Connect a wallet in the top bar. Tasks are worked out from your role on each credit.
               </Empty>
             ) : todo.length === 0 ? (
               <Empty icon="ti-checks" title="Nothing waiting for you">
