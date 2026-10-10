@@ -59,7 +59,7 @@ function Sidenav({ actionCount, close }: { actionCount: number; close: () => voi
       <button className="button-close-fullsidebar" onClick={close} aria-label="Close menu">
         <i className="ti ti-x align-middle" />
       </button>
-      <div className="h-100 overflow-auto">
+      <div className="credoc-sidenav-body d-flex flex-column overflow-auto">
         <ul className="side-nav">
           {NAV.flatMap((section) => [
             <li key={section.title} className="side-nav-title mt-2">
@@ -68,7 +68,7 @@ function Sidenav({ actionCount, close }: { actionCount: number; close: () => voi
             ...section.items.map((it) => <NavItem key={it.to} {...it} count={it.badge ? actionCount : 0} close={close} />),
           ])}
         </ul>
-        <div className="credoc-sidenav-note px-4 py-3 mt-2 border-top border-dashed fs-12 text-muted" title="Funds are held by the contract, never by Credoc.">
+        <div className="credoc-sidenav-note px-4 py-3 mt-auto border-top border-dashed fs-12 text-muted" title="Funds are held by the contract, never by Credoc.">
           <div className="d-flex align-items-center gap-1">
             <i className="ti ti-lock" aria-hidden="true" />
             <span className="note-text">Funds are held by the contract, never by Credoc.</span>

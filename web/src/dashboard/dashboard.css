@@ -65,3 +65,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 html[data-sidenav-size="condensed"] .credoc-sidenav-note { padding-left: 0 !important; padding-right: 0 !important; text-align: center; }
 html[data-sidenav-size="condensed"] .credoc-sidenav-note > div:first-child { justify-content: center; }
 html[data-sidenav-size="condensed"] .credoc-sidenav-note .note-text { display: none; }
+
+/* the sidebar body fills the space under the logo, so the funds note sits at its very bottom */
+.sidenav-menu { display: flex; flex-direction: column; }
+.credoc-sidenav-body { flex: 1 1 auto; min-height: 0; }
