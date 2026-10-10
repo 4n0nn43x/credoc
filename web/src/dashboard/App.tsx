@@ -1,4 +1,4 @@
-import { HashRouter, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./layout/Layout";
 import { StoreProvider } from "./lib/store";
 import { TxProvider } from "./lib/tx";
@@ -12,8 +12,29 @@ import { Verify } from "./pages/Verify";
 import { Market } from "./pages/Market";
 import { Identity } from "./pages/Identity";
 import { Activity } from "./pages/Activity";
+import { Login } from "./pages/Login";
+import { useWallet } from "./lib/wallet";
 
-/** Hash routing: the dashboard is a static page under /app/, no server rewrites needed. */
+/** Private pages need a connected wallet; the previous session is restored before deciding, so no flash of login. */
+function RequireWallet() {
+  const { address, ready } = useWallet();
+  const { pathname, search } = useLocation();
+  if (!ready) {
+    return (
+      <div className="d-flex justify-content-center py-5 text-muted" aria-busy="true">
+        <i className="ti ti-loader-2 credoc-spin fs-24" />
+      </div>
+    );
+  }
+  if (!address) return <Navigate to={`/login?next=${encodeURIComponent(pathname + search)}`} replace />;
+  return <Outlet />;
+}
+
+/**
+ * Hash routing: the dashboard is a static page under /app/, no server rewrites needed.
+ * Public on purpose: a credit's tracking page and the document verifier are meant to be shared with people who
+ * have no wallet (a customs broker, a bank, a buyer's accountant).
+ */
 export function App() {
   return (
     <WalletProvider>
@@ -21,18 +42,21 @@ export function App() {
         <TxProvider>
           <HashRouter>
             <Routes>
+              <Route path="login" element={<Login />} />
               <Route element={<Layout />}>
-                <Route index element={<Overview />} />
-                <Route path="credits" element={<Credits />} />
-                <Route path="credits/new" element={<NewCredit />} />
-                <Route path="credits/:id" element={<CreditDetail />} />
                 <Route path="track/:id" element={<CreditDetail />} />
-                <Route path="attest" element={<Attest />} />
                 <Route path="verify" element={<Verify />} />
-                <Route path="market" element={<Market />} />
-                <Route path="identity" element={<Identity />} />
-                <Route path="activity" element={<Activity />} />
-                <Route path="*" element={<Overview />} />
+                <Route element={<RequireWallet />}>
+                  <Route index element={<Overview />} />
+                  <Route path="credits" element={<Credits />} />
+                  <Route path="credits/new" element={<NewCredit />} />
+                  <Route path="credits/:id" element={<CreditDetail />} />
+                  <Route path="attest" element={<Attest />} />
+                  <Route path="market" element={<Market />} />
+                  <Route path="identity" element={<Identity />} />
+                  <Route path="activity" element={<Activity />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
               </Route>
             </Routes>
           </HashRouter>

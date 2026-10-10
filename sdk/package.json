@@ -10,7 +10,7 @@
     "e2e": "tsx scripts/e2e.ts",
     "attest": "tsx scripts/attest.ts"
   },
-  "license": "MIT",
+  "license": "UNLICENSED",
   "dependencies": {
     "viem": "2.57.4"
   },

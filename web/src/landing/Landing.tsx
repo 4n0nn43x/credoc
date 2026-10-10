@@ -1,5 +1,5 @@
 import { ArrowRight } from "lucide-react";
-import { BoomerangVideoBg } from "./BoomerangVideoBg";
+import { HeroSketch } from "./HeroSketch";
 import { Navbar, focusRing } from "./Navbar";
 import { Arc, CtaBand, Faq, Financing, Footer, How, Product } from "./Sections";
 
@@ -13,7 +13,7 @@ function Hero() {
   return (
     // min-h-screen below md so the stacked panel is never clipped on short phones.
     <section id="top" className="relative flex flex-col items-center overflow-hidden min-h-screen md:h-screen">
-      <BoomerangVideoBg />
+      <HeroSketch />
 
       <div className="relative z-10 flex flex-col items-center text-center pt-24 sm:pt-[6.5rem] md:pt-32 px-4 sm:px-6">
         <h1 className="font-serif text-4xl sm:text-5xl md:text-7xl lg:text-8xl leading-[1.1] tracking-tighter text-[#191919] font-normal">
@@ -34,7 +34,7 @@ function Hero() {
       </div>
 
       <div className="relative z-10 mt-auto pt-12 md:pt-0 w-full max-w-5xl px-4 sm:px-6">
-        <div className="bg-white/90 backdrop-blur-sm border border-gray-200 border-b-0 pt-8 sm:pt-12 md:pt-16 px-5 sm:px-8 md:px-12 pb-0 shadow-sm">
+        <div data-hero-panel className="bg-white/90 backdrop-blur-sm border border-gray-200 border-b-0 pt-8 sm:pt-12 md:pt-16 px-5 sm:px-8 md:px-12 pb-0 shadow-sm">
           <div className="grid md:grid-cols-2 gap-6 sm:gap-8 md:gap-16">
             <div>
               <p className="text-[11px] uppercase tracking-[0.2em] text-[#191919]/50 font-medium">What is Credoc?</p>

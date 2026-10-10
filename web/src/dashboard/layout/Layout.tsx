@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { CommandPalette, Kbd, MOD, useShortcuts } from "./CommandPalette";
 import { LogoMark } from "../../shared/Logo";
 import { CREDOC_ADDRESS, IS_LOCAL, chain, explorerAddress } from "../../shared/config";
 import { PERSONAS, type PersonaId } from "../../shared/demo";
@@ -105,42 +106,19 @@ function NavItem({ to, icon, label, count, close }: { to: string; icon: string; 
   );
 }
 
-function Topbar({ toggle }: { toggle: () => void }) {
+function Topbar({ toggle, openPalette }: { toggle: () => void; openPalette: () => void }) {
   const w = useWallet();
-  const { byId, credits } = useStore();
-  const navigate = useNavigate();
-  const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
-  const search = useRef<HTMLInputElement>(null);
+  const location = useLocation();
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        search.current?.focus();
-      }
-    };
     const onClick = (e: MouseEvent) => {
       if (menu.current && !menu.current.contains(e.target as Node)) setOpen(false);
     };
-    window.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onClick);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onClick);
-    };
+    return () => document.removeEventListener("mousedown", onClick);
   }, []);
-
-  const go = (e: FormEvent) => {
-    e.preventDefault();
-    const term = q.trim().replace(/^#/, "");
-    if (!term) return;
-    const hit = byId.get(term) ?? credits.find((c) => c.ref.toLowerCase() === term.toLowerCase());
-    navigate(hit ? `/credits/${hit.id}` : `/credits?q=${encodeURIComponent(term)}`);
-    setQ("");
-    search.current?.blur();
-  };
 
   const persona = PERSONAS.find((p) => p.id === w.persona);
 
@@ -151,19 +129,19 @@ function Topbar({ toggle }: { toggle: () => void }) {
           <button className="sidenav-toggle-button px-2" onClick={toggle} aria-label="Toggle menu">
             <i className="ti ti-menu-deep fs-24" />
           </button>
-          <form onSubmit={go} className="topbar-search text-muted d-none d-xl-flex gap-2 align-items-center" role="search">
+          <button
+            type="button"
+            onClick={openPalette}
+            className="topbar-search credoc-search-trigger text-muted d-none d-lg-flex gap-2 align-items-center border-0"
+            aria-label={`Search credits and pages (${MOD} K)`}
+          >
             <i className="ti ti-search fs-18" />
-            <input
-              ref={search}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="border-0 bg-transparent flex-grow-1"
-              style={{ outline: "none", minWidth: 220 }}
-              placeholder="Find a credit by # or PO reference"
-              aria-label="Find a credit"
-            />
-            <span className="ms-auto fw-medium">⌘K</span>
-          </form>
+            <span className="flex-grow-1 text-start">Search…</span>
+            <Kbd keys={[MOD, "K"]} />
+          </button>
+          <button type="button" onClick={openPalette} className="topbar-link btn btn-link px-2 d-lg-none" aria-label="Search">
+            <i className="ti ti-search fs-20" />
+          </button>
         </div>
 
         <div className="d-flex align-items-center gap-2">
@@ -192,9 +170,9 @@ function Topbar({ toggle }: { toggle: () => void }) {
                 <i className="ti ti-chevron-down" />
               </button>
             ) : (
-              <button className="btn btn-dark" onClick={() => (IS_LOCAL ? setOpen(!open) : void w.connect())}>
-                {IS_LOCAL ? "Choose a demo wallet" : "Connect wallet"}
-              </button>
+              <Link className="btn btn-dark" to={`/login?next=${encodeURIComponent(location.pathname)}`}>
+                Sign in
+              </Link>
             )}
             {open && (
               <div className="dropdown-menu dropdown-menu-end show p-2" style={{ right: 0, left: "auto", minWidth: 280, top: "calc(100% + 8px)" }}>
@@ -229,7 +207,7 @@ function Topbar({ toggle }: { toggle: () => void }) {
                   <>
                     <div className="px-2 py-1 hash text-muted">{w.address}</div>
                     <button className="dropdown-item rounded text-danger" onClick={() => { w.disconnect(); setOpen(false); }}>
-                      <i className="ti ti-logout me-1" /> Disconnect
+                      <i className="ti ti-logout me-1" /> Sign out
                     </button>
                   </>
                 )}
@@ -250,6 +228,9 @@ export function Layout() {
   const { pathname } = useLocation();
 
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  useShortcuts(openPalette);
   useEffect(() => {
     document.documentElement.classList.toggle("sidebar-enable", mobileOpen);
   }, [mobileOpen]);
@@ -267,7 +248,7 @@ export function Layout() {
 
   return (
     <div className="wrapper">
-      <Topbar toggle={toggle} />
+      <Topbar toggle={toggle} openPalette={openPalette} />
       <Sidenav actionCount={actions.length} close={close} />
       <div className="page-content">
         <div className="page-container">
@@ -281,7 +262,7 @@ export function Layout() {
         </div>
         <footer className="footer">
           <div className="page-container d-flex justify-content-between flex-wrap gap-2 fs-12 text-muted">
-            <span>Credoc · letters of credit settled on Arc · MIT</span>
+            <span>Credoc · letters of credit settled on Arc</span>
             <span>
               <a href="/" className="link-secondary me-3">Home</a>
               <a href="/#faq" className="link-secondary">FAQ</a>
@@ -290,6 +271,7 @@ export function Layout() {
         </footer>
       </div>
       {mobileOpen && <div className="offcanvas-backdrop fade show" onClick={close} />}
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
     </div>
   );
 }

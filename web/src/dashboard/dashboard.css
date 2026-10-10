@@ -47,3 +47,16 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* brand mark in the sidebar and topbar: Osen sizes images, our mark is inline SVG */
 .credoc-mark { width: 24px; height: 24px; flex: none; color: var(--credoc-ink); }
 .sidenav-menu .logo { height: var(--osen-topbar-height, 70px); }
+
+/* search trigger and command palette */
+.credoc-search-trigger { width: 260px; cursor: pointer; }
+.credoc-search-trigger:hover { background-color: var(--credoc-paper); }
+.credoc-kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border: 1px solid var(--osen-border-color); border-bottom-width: 2px; border-radius: 4px; background: #fff; color: #57534e; font: 500 11px/1 "Inter", sans-serif; }
+.credoc-palette { margin-top: 12vh; }
+.credoc-palette .modal-content { border: 1px solid var(--osen-border-color); box-shadow: 0 24px 64px rgba(25, 25, 25, 0.18); overflow: hidden; }
+.credoc-palette-list { max-height: min(56vh, 460px); overflow-y: auto; }
+.credoc-palette-item { padding: 9px 10px; border-radius: 6px; cursor: pointer; min-height: 40px; }
+.credoc-palette-item.is-active { background: var(--credoc-paper); }
+
+.credoc-login { background: var(--credoc-paper); }
+.credoc-login .card { border: 1px solid var(--osen-border-color); }

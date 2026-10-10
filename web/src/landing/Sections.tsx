@@ -367,13 +367,6 @@ export function CtaBand() {
           >
             Launch app
           </a>
-          {/* TODO: replace with the real Credoc repository URL. */}
-          <a
-            href="https://github.com/"
-            className={`px-6 sm:px-8 py-3 sm:py-3.5 border border-white/30 text-white text-sm font-medium rounded-lg hover:bg-white/10 transition-colors duration-200 ${inkRing}`}
-          >
-            Read the code
-          </a>
         </div>
       </div>
     </section>
@@ -391,7 +384,7 @@ export function Footer() {
             <LogoMark className="w-5 h-5 text-[#191919]" />
             <span className="font-semibold tracking-tight text-[#191919]">Credoc</span>
           </a>
-          <p className="mt-3 text-sm text-[#191919]/70">Built on Arc. MIT licensed.</p>
+          <p className="mt-3 text-sm text-[#191919]/70">Built on Arc.</p>
         </div>
         <nav aria-label="Footer">
           <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">

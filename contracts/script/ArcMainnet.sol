@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
 /// @notice Arc mainnet (chainId 5042) addresses, from https://docs.arc.io/arc/references/contract-addresses.md

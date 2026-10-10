@@ -129,4 +129,4 @@ An independent review found one high, two medium and four low issues ([report](d
 
 ## License
 
-MIT
+Copyright (c) 2026 4n0nn43x. All rights reserved. The source is shown for the Arc Microgrants review; no license to use, copy or redistribute it is granted.

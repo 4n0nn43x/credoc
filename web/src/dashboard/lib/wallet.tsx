@@ -23,6 +23,8 @@ export type Wallet = WalletClient<Transport, Chain, Account>;
 type State = {
   address: Address | null;
   wallet: Wallet | null;
+  /** false until the previous session (demo persona or browser wallet) has been restored or ruled out */
+  ready: boolean;
   kind: "injected" | "demo" | null;
   persona: PersonaId | null;
   wrongChain: boolean;
@@ -36,7 +38,16 @@ type State = {
 };
 
 const Ctx = createContext<State | null>(null);
-const PERSONA_KEY = "credoc.persona";
+/** Remembers how the user signed in: "injected" or a demo persona id. Never a key or an address. */
+const SESSION_KEY = "credoc.session";
+const remember = (v: string | null) => {
+  try {
+    if (v) localStorage.setItem(SESSION_KEY, v);
+    else localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* storage blocked: the session is simply not remembered */
+  }
+};
 
 const erc20 = [
   { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
@@ -51,6 +62,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [persona, setPersona] = useState<PersonaId | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [balances, setBalances] = useState<State["balances"]>(null);
+  const [ready, setReady] = useState(false);
   const hasInjected = typeof window !== "undefined" && !!window.ethereum;
 
   const refreshBalances = useCallback(async () => {
@@ -86,11 +98,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setKind("demo");
     setPersona(id);
     setChainId(chain.id);
-    try {
-      localStorage.setItem(PERSONA_KEY, id);
-    } catch {
-      /* storage blocked: persona is simply not remembered */
-    }
+    remember(id);
   }, []);
 
   const bindInjected = useCallback(async (addr: Address) => {
@@ -105,7 +113,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const connect = useCallback(async () => {
     if (!window.ethereum) throw new Error("No browser wallet found. Install MetaMask or Rabby.");
     const [addr] = (await window.ethereum.request({ method: "eth_requestAccounts" })) as Address[];
-    if (addr) await bindInjected(addr);
+    if (addr) {
+      await bindInjected(addr);
+      remember("injected");
+    }
   }, [bindInjected]);
 
   const disconnect = useCallback(() => {
@@ -113,11 +124,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(null);
     setKind(null);
     setPersona(null);
-    try {
-      localStorage.removeItem(PERSONA_KEY);
-    } catch {
-      /* ignore */
-    }
+    remember(null);
   }, []);
 
   const switchChain = useCallback(async () => {
@@ -144,15 +151,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setChainId(chain.id);
   }, []);
 
-  // restore a demo persona, follow injected account and network changes
+  // restore the previous session without prompting, then follow injected account and network changes
   useEffect(() => {
     let saved: string | null = null;
     try {
-      saved = localStorage.getItem(PERSONA_KEY);
+      saved = localStorage.getItem(SESSION_KEY);
     } catch {
       /* ignore */
     }
-    if (IS_LOCAL && saved && PERSONAS.some((p) => p.id === saved)) void usePersona(saved as PersonaId);
+    const restore = async () => {
+      if (IS_LOCAL && saved && PERSONAS.some((p) => p.id === saved)) return usePersona(saved as PersonaId);
+      if (saved === "injected" && window.ethereum) {
+        // eth_accounts never opens a popup: it only returns accounts the user already authorized
+        const [addr] = (await window.ethereum.request({ method: "eth_accounts" })) as Address[];
+        if (addr) return bindInjected(addr);
+        remember(null);
+      }
+    };
+    void restore()
+      .catch(() => remember(null))
+      .finally(() => setReady(true));
     const eth = window.ethereum;
     if (!eth?.on) return;
     const onAccounts = (accs: string[]) => {
@@ -173,6 +191,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     () => ({
       address,
       wallet,
+      ready,
       kind,
       persona,
       wrongChain: kind === "injected" && chainId !== null && chainId !== chain.id,
@@ -184,7 +203,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       switchChain,
       refreshBalances,
     }),
-    [address, wallet, kind, persona, chainId, hasInjected, balances, connect, usePersona, disconnect, switchChain, refreshBalances],
+    [address, wallet, ready, kind, persona, chainId, hasInjected, balances, connect, usePersona, disconnect, switchChain, refreshBalances],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
