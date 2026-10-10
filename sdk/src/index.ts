@@ -249,12 +249,27 @@ export function quoteAssignment(args: {
 
 type Wallet = WalletClient<Transport, Chain | undefined, Account>;
 
+/** Optional lifecycle callbacks, so a UI can show "sent" before the receipt and measure finality. */
+export type TxHooks = {
+  onSubmitted?: (hash: Hex) => void;
+  onConfirmed?: (hash: Hex) => void;
+};
+
 export class Credoc {
   constructor(
     readonly publicClient: PublicClient,
     readonly address: Address,
     readonly wallet?: Wallet,
+    readonly hooks: TxHooks = {},
   ) {}
+
+  /** Every transaction this client sends goes through here. */
+  private async receipt(hash: Hex) {
+    this.hooks.onSubmitted?.(hash);
+    const r = await this.publicClient.waitForTransactionReceipt({ hash });
+    this.hooks.onConfirmed?.(hash);
+    return r;
+  }
 
   private get w(): Wallet {
     if (!this.wallet) throw new Error("a wallet client is required for this action");
@@ -270,7 +285,7 @@ export class Credoc {
       account: this.w.account,
     });
     const hash = await this.w.writeContract(request as never);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await this.receipt(hash);
     if (receipt.status !== "success") throw new Error(`${functionName} reverted: ${hash}`);
     return hash;
   }
@@ -333,7 +348,7 @@ export class Credoc {
           chain: this.w.chain,
           account: this.w.account,
         });
-        await this.publicClient.waitForTransactionReceipt({ hash: h });
+        await this.receipt(h);
       }
       hash = await this.w.sendTransaction({
         to: this.address,
@@ -342,7 +357,7 @@ export class Credoc {
         account: this.w.account,
       });
     }
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await this.receipt(hash);
     if (receipt.status !== "success") throw new Error(`open reverted: ${hash}`);
     const [ev] = parseEventLogs({ abi: documentaryCreditAbi, eventName: "CreditOpened", logs: receipt.logs });
     if (!ev) throw new Error("CreditOpened event not found");
@@ -388,7 +403,7 @@ export class Credoc {
         chain: this.w.chain,
         account: this.w.account,
       });
-      await this.publicClient.waitForTransactionReceipt({ hash: h });
+      await this.receipt(h);
     }
     const hash = await this.send("makeOffer", [id, price, validUntil]);
     const receipt = await this.publicClient.getTransactionReceipt({ hash });
@@ -522,7 +537,7 @@ export class Credoc {
       chain: this.w.chain,
       account: this.w.account,
     });
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await this.receipt(hash);
     const [ev] = parseEventLogs({ abi: identityAbi, eventName: "Registered", logs: receipt.logs });
     if (!ev) throw new Error("Registered event not found");
     return ev.args.agentId;

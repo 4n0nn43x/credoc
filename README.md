@@ -49,6 +49,7 @@ Registry calls get a fixed gas budget and cannot revert a payment. A caller cann
 ```
 contracts/   Foundry project: DocumentaryCredit.sol, tests, deploy script
 sdk/         TypeScript SDK (viem), end-to-end demo, attestor CLI
+web/         Landing page and dashboard (Vite, React), gasless relayer (serverless function)
 ```
 
 ## Run the tests
@@ -72,6 +73,30 @@ cd sdk && npm install && npm test && npm run e2e
 ```
 
 The demo deploys the contract, registers ERC-8004 identities, opens a two-container credit in one transaction, prices the receivable from the exporter's history and sells it to a financier, has a zero-balance forwarder and inspector sign offchain while a relayer submits, settles both tranches, lets a second credit expire, and prints the exporter's resulting track record.
+
+## Web app
+
+The landing page (`web/index.html`, Tailwind) and the dashboard (`web/app/`, built on the Osen Bootstrap theme recompiled with Credoc's tokens) share the same ink, warm grays, serif display face and logo.
+
+The dashboard indexes the contract's events in the browser, so it needs no backend. It covers the four roles:
+- **Importers** open a credit with a 4-step wizard (one transaction), review documents, waive discrepancies, extend or reclaim.
+- **Exporters** link their identity, review and accept financing offers.
+- **Attestors** drop a file, see its fingerprint, sign for free; a relayer (`web/api/relay.ts`) submits.
+- **Financiers** browse receivables with the exporter's track record and make escrowed offers.
+
+Public pages need no wallet: `/app/#/track/<id>` follows a credit like a parcel, `/app/#/verify` checks a file against every presented document.
+
+Run it locally against a fork of Arc mainnet, with demo personas to switch between roles:
+
+```bash
+arc-anvil --fork-url https://rpc.mainnet.arc.io --chain-id 5042
+cd web && npm install && npm run seed   # deploys and plays ~35 days of activity, writes .env.local
+npm run dev                             # http://localhost:5173 and /app/
+```
+
+`npm test` runs the relayer and view-logic tests. `npm run osen` recompiles the theme from a licensed copy of the Osen template (`OSEN_DIR`); only the compiled CSS is in this repo.
+
+For mainnet, set `VITE_NETWORK=mainnet`, `VITE_CREDOC_ADDRESS`, `VITE_CREDOC_FROM_BLOCK` and the server-side `RELAYER_KEY` (a wallet holding a little USDC for gas), then deploy `web/` to Vercel.
 
 ## Attestor CLI
 

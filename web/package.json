@@ -1,0 +1,39 @@
+{
+  "name": "@credoc/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "osen": "node scripts/build-osen.mjs",
+    "seed": "tsx scripts/seed.ts",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/dashboard/lib/*.test.ts api/*.test.ts"
+  },
+  "dependencies": {
+    "@credoc/sdk": "file:../sdk",
+    "apexcharts": "3.54.1",
+    "lucide-react": "0.542.0",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "react-router-dom": "6.30.1",
+    "viem": "2.57.4"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "@vitejs/plugin-react": "5.0.2",
+    "autoprefixer": "10.4.21",
+    "bootstrap": "5.3.3",
+    "postcss": "8.5.6",
+    "sass": "1.77.6",
+    "tailwindcss": "3.4.17",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vite": "7.1.5"
+  }
+}

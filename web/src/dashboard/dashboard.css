@@ -1,0 +1,49 @@
+/* Credoc layer over the Osen theme: shared tokens with the landing page. */
+:root {
+  --credoc-ink: #191919;
+  --credoc-paper: #f4f3f3;
+  --osen-font-sans-serif: "Inter", sans-serif;
+}
+body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+.font-serif { font-family: "P22 Mackinac W01 Book", Georgia, serif; font-weight: 400; letter-spacing: -0.02em; }
+.num { font-variant-numeric: tabular-nums; }
+.micro-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; color: rgba(25, 25, 25, 0.5); font-weight: 500; }
+.page-title-head h4 { font-family: "P22 Mackinac W01 Book", Georgia, serif; font-weight: 400; font-size: 1.75rem !important; letter-spacing: -0.02em; }
+
+/* cards: hairlines rather than shadows */
+.card { box-shadow: none; border: 1px solid var(--osen-border-color); }
+.btn-primary, .btn-dark { --osen-btn-bg: #191919; --osen-btn-border-color: #191919; --osen-btn-hover-bg: #2b2b2b; --osen-btn-hover-border-color: #2b2b2b; }
+
+/* sidebar brand */
+.sidenav-menu .logo, .app-topbar .logo { display: flex; align-items: center; gap: 10px; color: var(--credoc-ink); text-decoration: none; }
+.credoc-wordmark { font-weight: 600; font-size: 1rem; letter-spacing: -0.01em; color: var(--credoc-ink); }
+
+/* amounts: whole part prominent, cents and currency muted */
+.amount .cents, .amount .ccy { color: rgba(25, 25, 25, 0.45); font-size: 0.7em; }
+.amount .ccy { margin-left: 0.3em; letter-spacing: 0.02em; }
+
+/* soft status badges: tinted background, dark text, always a word */
+.badge-soft { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-weight: 500; font-size: 12px; }
+.badge-soft.tone-success { background: rgba(47, 125, 79, 0.1); color: #22593a; }
+.badge-soft.tone-info { background: rgba(61, 90, 128, 0.1); color: #2c4260; }
+.badge-soft.tone-warning { background: rgba(183, 121, 31, 0.12); color: #7a5014; }
+.badge-soft.tone-secondary { background: rgba(120, 113, 108, 0.12); color: #57534e; }
+.badge-soft.tone-dark { background: rgba(25, 25, 25, 0.07); color: #191919; }
+
+.credoc-toast { width: 340px; border: 1px solid var(--osen-border-color); box-shadow: 0 8px 24px rgba(25, 25, 25, 0.08); }
+@keyframes credoc-spin { to { transform: rotate(360deg); } }
+.credoc-spin { display: inline-block; animation: credoc-spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .credoc-spin { animation: none; } }
+
+.hash { font-family: SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.table > :not(caption) > * > * { padding-top: 0.7rem; padding-bottom: 0.7rem; }
+.empty-state { padding: 3rem 1rem; text-align: center; }
+.empty-state .ti { font-size: 32px; color: rgba(25, 25, 25, 0.35); }
+
+.network-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--credoc-paper); font-size: 12px; font-weight: 500; }
+.network-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #2f7d4f; }
+
+/* brand mark in the sidebar and topbar: Osen sizes images, our mark is inline SVG */
+.credoc-mark { width: 24px; height: 24px; flex: none; color: var(--credoc-ink); }
+.sidenav-menu .logo { height: var(--osen-topbar-height, 70px); }
