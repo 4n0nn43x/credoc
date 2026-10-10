@@ -27,6 +27,7 @@ function Hero() {
         </p>
         <a
           href="/app/#/credits/new"
+          data-hero-cta
           className={`mt-6 sm:mt-8 md:mt-10 px-6 sm:px-8 py-3 sm:py-3.5 bg-[#191919] text-white text-sm font-medium rounded-lg hover:bg-[#191919]/90 transition-colors duration-200 ${focusRing}`}
         >
           Open a credit

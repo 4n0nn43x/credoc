@@ -1,13 +1,14 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Hero background, drawn in pencil on a canvas: Credoc's promise as a small story.
- *   left:  a shipping document is sketched, signed and stamped, slides into an envelope that folds into a
- *          paper plane (a stack of papers and a pencil stay on the desk, so the side never goes empty);
- *   sky:   the plane flies over the headline, leaving a dotted trail between scribbled clouds;
- *   right: the importer's funds wait under a padlock; when the plane lands the lock opens and a seal reads
- *          "paid, final in 0.4 s". Then a pause, a soft fade, and the story starts again.
- * Reduced motion shows one still frame with the plane in flight. Hidden below the md breakpoint.
+ * Hero background, drawn in pencil on a canvas: Credoc as a seamless cycle.
+ *   left:  the exporter's desk. A signed and stamped document slides into an envelope that folds into a paper plane;
+ *   above: the plane flies over the headline (documents travel up and over), its trail fading like a comet's;
+ *   right: the importer's funds under a padlock. The plane lands, the lock opens, a seal reads "paid · final in 0.4 s",
+ *   below:  and a coin rolls back under the call to action to the exporter's desk (money travels down and back).
+ * Meanwhile the next document is drawn on the desk and a new padlock closes on the funds, so the last frame is the
+ * first one: the loop has no seam. Desk, coins and clouds are drawn once, at first load.
+ * Reduced motion shows one still frame. Hidden below the md breakpoint.
  */
 
 type P = { x: number; y: number };
@@ -15,20 +16,24 @@ type Seg = [P, P];
 
 const INK = "34, 32, 30";
 const BLUE = "86, 98, 214";
-const T = {
-  doc: [0, 2.0],
-  right: [0.3, 2.2],
-  clouds: [0.8, 2.6],
-  envelope: [2.1, 2.8],
-  slide: [2.8, 3.6],
-  flap: [3.6, 4.0],
-  fold: [4.1, 4.6],
-  flight: [4.6, 7.0],
-  unlock: [7.0, 7.5],
-  seal: [7.5, 8.3],
-  fadeOut: [9.9, 10.6],
+const INTRO = 1.6; // first load only: desk, coins, clouds and the first document are sketched in
+const CYCLE = 8.6; // seconds; state(0) === state(CYCLE)
+const C = {
+  envelope: [0, 0.6],
+  slide: [0.6, 1.4],
+  flap: [1.4, 1.8],
+  fold: [1.8, 2.3],
+  flight: [2.3, 4.5],
+  trailTail: [2.9, 4.9],
+  nextDoc: [2.7, 4.8],
+  unlock: [4.5, 5.0],
+  lockOut: [4.9, 5.3],
+  seal: [4.9, 5.6],
+  coin: [5.3, 6.9],
+  coinTail: [5.8, 7.3],
+  sealOut: [6.8, 7.4],
+  relock: [7.2, 8.3],
 } as const;
-const LOOP = 10.8;
 const APEX_SHRINK = 0.55;
 
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
@@ -119,7 +124,6 @@ function hatch(ctx: CanvasRenderingContext2D, from: P, to: P, count: number, dir
   }
 }
 
-/** Envelope segments (flap closed) and paper-plane segments, index for index: folding is interpolation. */
 function envelopeSegs(c: P, s: number): Seg[] {
   const w = s * 0.9;
   const h = s * 0.55;
@@ -128,8 +132,8 @@ function envelopeSegs(c: P, s: number): Seg[] {
   const BR = { x: c.x + w / 2, y: c.y + h / 2 };
   const BL = { x: c.x - w / 2, y: c.y + h / 2 };
   const A = { x: c.x, y: c.y + h * 0.08 };
-  const C = { x: c.x, y: c.y + h * 0.18 };
-  return [[TL, TR], [TR, BR], [BR, BL], [BL, TL], [TL, A], [A, TR], [BL, C], [C, BR]];
+  const Cc = { x: c.x, y: c.y + h * 0.18 };
+  return [[TL, TR], [TR, BR], [BR, BL], [BL, TL], [TL, A], [A, TR], [BL, Cc], [Cc, BR]];
 }
 
 function planeSegs(c: P, s: number, angle: number): Seg[] {
@@ -144,23 +148,10 @@ function planeSegs(c: P, s: number, angle: number): Seg[] {
   const B = rot(-0.4, 0.2);
   const K1 = rot(-0.22, 0.1);
   const K2 = rot(0.18, 0.04);
-  return [[Tt, N], [N, B], [B, F], [F, Tt], [F, N], [F, N], [K1, K2], [K2, N]];
+  return [[Tt, N], [N, B], [B, F], [F, Tt], [F, N], [K1, K2], [K2, N]];
 }
 
-type Layout = {
-  w: number;
-  h: number;
-  S: number; // the unit of the drawing (a document's height)
-  L: P; // left vignette center
-  R: P; // right vignette center
-  strength: number;
-  path: Path;
-  clouds: { c: P; r: number }[];
-};
-
-type Band = { panelLeft: number; panelRight: number; title: { top: number; left: number; right: number } | null };
-
-/** A smooth flight path through knots (Catmull-Rom), sampled and parameterized by distance. */
+/** A smooth path through knots (Catmull-Rom), sampled and parameterized by distance. */
 type Path = { pts: P[]; lens: number[]; total: number };
 
 function spline(knots: P[]): Path {
@@ -193,60 +184,97 @@ function along(path: Path, u: number): P {
   return lerpP(path.pts[i - 1]!, path.pts[i]!, (d - path.lens[i - 1]!) / span);
 }
 
+/** The part of a path between two fractions, as points: a comet's trail. */
+function slice(path: Path, from: number, to: number): P[] {
+  if (to <= from) return [];
+  const n = Math.max(2, Math.round((to - from) * 80));
+  return Array.from({ length: n + 1 }, (_, i) => along(path, from + ((to - from) * i) / n));
+}
+
+type Layout = {
+  w: number;
+  h: number;
+  S: number; // the unit of the drawing (a document's height)
+  L: P; // exporter's desk, left
+  R: P; // importer's funds, right
+  flight: Path;
+  roll: Path;
+  clouds: { c: P; r: number }[];
+};
+
+/** What the drawing must avoid, measured in the hero. */
+type Band = {
+  panelLeft: number;
+  panelRight: number;
+  panelTop: number;
+  ctaBottom: number | null;
+  title: { top: number; left: number; right: number } | null;
+};
+
 function layout(w: number, h: number, band: Band | null): Layout {
-  const mobile = w < 768;
-  let S = mobile ? Math.min(w * 0.3, 120) : Math.min(h * 0.4, w * 0.16, 340);
-  let lx = mobile ? w * 0.2 : Math.max(w * 0.13, S * 0.62 + 28);
-  if (!mobile && band) {
+  let S = Math.min(h * 0.4, w * 0.16, 340);
+  let lx = Math.max(w * 0.13, S * 0.62 + 28);
+  if (band) {
     // keep both vignettes clear of the panel
     const room = Math.min(band.panelLeft, w - band.panelRight) - 32;
     S = Math.max(130, Math.min(S, room / 0.95));
     lx = Math.min(lx, band.panelLeft - S * 0.5 - 24);
   }
-  const cy = mobile ? h * 0.62 : h * 0.5;
+  const cy = h * 0.5;
   const L = { x: lx, y: cy };
   const R = { x: w - lx, y: cy };
+
+  // documents go up and over: the flight peaks between the navigation and the headline, never across it
   const start = { x: L.x, y: L.y + S * 0.38 };
   const end = { x: R.x - S * 0.05, y: R.y + S * 0.12 };
-  // the flight climbs beside the headline, stays above it across its whole width, then comes down past it
-  // (shrunk over the headline, the plane extends about 0.1 S around its path)
   const tt = band?.title;
-  const apex = tt ? Math.max(56, tt.top - 14 - S * 0.1) : mobile ? h * 0.42 : Math.max(h * 0.1, 80);
+  const apex = tt ? Math.max(56, tt.top - 14 - S * 0.1) : Math.max(h * 0.1, 80);
   const left = tt ? tt.left - S * 0.3 : w * 0.3;
   const right = tt ? tt.right + S * 0.3 : w * 0.7;
-  const top = apex;
-  const path = spline([start, { x: left, y: apex + S * 0.14 }, { x: w / 2, y: apex }, { x: right, y: apex + S * 0.14 }, end]);
-  const clouds = mobile
-    ? []
-    : [
-        { c: { x: lerp(L.x, w * 0.5, 0.45), y: top + S * 0.18 }, r: S * 0.15, dy: 0 },
-        { c: { x: lerp(w * 0.5, R.x, 0.58), y: top + S * 0.3 }, r: S * 0.13, dy: 0 },
-      ].map((cl) => ({ c: { x: cl.c.x, y: cl.c.y + cl.dy }, r: cl.r }));
-  return { w, h, S, L, R, strength: mobile ? 0.55 : 1, path, clouds };
+  const flight = spline([start, { x: left, y: apex + S * 0.14 }, { x: w / 2, y: apex }, { x: right, y: apex + S * 0.14 }, end]);
+
+  // money comes down and back: a coin rolls under the call to action, above the panel, to the exporter's desk
+  const coinTop = { x: R.x + S * 0.08, y: R.y + S * 0.62 - 6 * S * 0.075 };
+  const low = band ? (band.ctaBottom !== null ? (band.ctaBottom + band.panelTop) / 2 : band.panelTop - 22) : h * 0.62;
+  const roll = spline([
+    coinTop,
+    { x: R.x - S * 0.55, y: low },
+    { x: w / 2, y: low + 4 },
+    { x: L.x + S * 0.6, y: low },
+    { x: L.x + S * 0.3, y: L.y + S * 0.62 },
+  ]);
+
+  const clouds = [
+    { c: { x: lerp(L.x, w * 0.5, 0.45), y: apex + S * 0.18 }, r: S * 0.15 },
+    { c: { x: lerp(w * 0.5, R.x, 0.58), y: apex + S * 0.3 }, r: S * 0.13 },
+  ];
+  return { w, h, S, L, R, flight, roll, clouds };
 }
 
-function render(ctx: CanvasRenderingContext2D, Lt: Layout, t: number) {
+/**
+ * One frame. `t` is the time in the cycle (0..CYCLE), `intro` (0..1) sketches the permanent scenery on first load.
+ * Every moving part is either at rest or invisible at t = 0 and t = CYCLE, which is what makes the loop seamless.
+ */
+function render(ctx: CanvasRenderingContext2D, Lt: Layout, t: number, intro: number) {
   const { S, L, R } = Lt;
   const j = Math.max(1.1, S / 140);
   ctx.clearRect(0, 0, Lt.w, Lt.h);
   ctx.save();
-  ctx.globalAlpha = Lt.strength * (1 - ph(t, T.fadeOut));
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // ---------------- left desk: papers and a pencil that always stay
-  wash(ctx, { x: L.x, y: L.y + S * 0.1 }, S * 0.85, 0.14);
-  const desk = ph(t, [0, 1.2]);
+  // ---------------- permanent scenery: the exporter's desk, the importer's coins, the clouds
+  wash(ctx, { x: L.x, y: L.y + S * 0.1 }, S * 0.85, 0.14 * intro);
+  wash(ctx, { x: R.x, y: R.y + S * 0.15 }, S * 0.85, 0.14 * intro);
   const back = (dx: number, dy: number, rot: number, seed: number) => {
     const w = S * 0.62;
     const h = S * 0.8;
     const c = { x: L.x + dx, y: L.y - S * 0.32 + dy };
     const r = (x: number, y: number): P => ({ x: c.x + x * Math.cos(rot) - y * Math.sin(rot), y: c.y + x * Math.sin(rot) + y * Math.cos(rot) });
-    sketch(ctx, [r(-w / 2, -h / 2), r(w / 2, -h / 2), r(w / 2, h / 2), r(-w / 2, h / 2), r(-w / 2, -h / 2)], { seed, jitter: j, alpha: 0.32, width: 1.2 }, desk);
+    sketch(ctx, [r(-w / 2, -h / 2), r(w / 2, -h / 2), r(w / 2, h / 2), r(-w / 2, h / 2), r(-w / 2, -h / 2)], { seed, jitter: j, alpha: 0.32, width: 1.2 }, intro);
   };
   back(-S * 0.08, S * 0.04, -0.09, 11);
   back(S * 0.06, S * 0.02, 0.06, 12);
-  // the pencil, lying across the bottom of the desk
   const pa = { x: L.x - S * 0.55, y: L.y + S * 0.86 };
   const pb = { x: L.x + S * 0.45, y: L.y + S * 0.7 };
   const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
@@ -256,30 +284,59 @@ function render(ctx: CanvasRenderingContext2D, Lt: Layout, t: number) {
     ctx,
     [{ x: pa.x + nrm.x, y: pa.y + nrm.y }, { x: pb.x + nrm.x, y: pb.y + nrm.y }, tip, { x: pb.x - nrm.x, y: pb.y - nrm.y }, { x: pa.x - nrm.x, y: pa.y - nrm.y }, { x: pa.x + nrm.x, y: pa.y + nrm.y }],
     { seed: 13, jitter: j * 0.6, alpha: 0.6, width: 1.3 },
-    desk,
+    intro,
   );
-  sketch(ctx, [{ x: pb.x + nrm.x, y: pb.y + nrm.y }, { x: pb.x - nrm.x, y: pb.y - nrm.y }], { seed: 14, jitter: 0.6, alpha: 0.5 }, desk);
-  hatch(ctx, { x: pa.x + nrm.x * 0.8, y: pa.y + nrm.y * 0.8 }, { x: pb.x + nrm.x * 0.8, y: pb.y + nrm.y * 0.8 }, 14, { x: -nrm.x * 1.4, y: -nrm.y * 1.4 }, 15, desk, 1, 0.22);
+  sketch(ctx, [{ x: pb.x + nrm.x, y: pb.y + nrm.y }, { x: pb.x - nrm.x, y: pb.y - nrm.y }], { seed: 14, jitter: 0.6, alpha: 0.5 }, intro);
+  hatch(ctx, { x: pa.x + nrm.x * 0.8, y: pa.y + nrm.y * 0.8 }, { x: pb.x + nrm.x * 0.8, y: pb.y + nrm.y * 0.8 }, 14, { x: -nrm.x * 1.4, y: -nrm.y * 1.4 }, 15, intro, 1, 0.22);
 
-  // ---------------- the document: drawn, signed, stamped, then slides into the envelope
+  const coins = 6;
+  const rx = S * 0.34;
+  const ry = S * 0.1;
+  const th = S * 0.075;
+  const base = { x: R.x + S * 0.08, y: R.y + S * 0.62 };
+  for (let i = 0; i < coins; i++) {
+    const y = base.y - i * th;
+    const pr = clamp(intro * coins * 1.2 - i);
+    sketch(ctx, ellipse({ x: base.x, y }, rx, ry, 0, Math.PI, 18), { seed: 90 + i, jitter: j * 0.6, width: 1.3, alpha: 0.7 }, pr);
+    sketch(ctx, [{ x: base.x - rx, y }, { x: base.x - rx, y: y - th }], { seed: 100 + i, jitter: 0.5, alpha: 0.6, passes: 1 }, pr);
+    sketch(ctx, [{ x: base.x + rx, y }, { x: base.x + rx, y: y - th }], { seed: 110 + i, jitter: 0.5, alpha: 0.6, passes: 1 }, pr);
+    hatch(ctx, { x: base.x - rx * 0.8, y: y + ry * 0.55 }, { x: base.x + rx * 0.8, y: y + ry * 0.55 }, 9, { x: 0, y: -th * 0.8 }, 120 + i * 10, pr, 1, 0.22);
+  }
+  const topY = base.y - coins * th;
+  sketch(ctx, ellipse({ x: base.x, y: topY }, rx, ry), { seed: 130, jitter: j * 0.6, width: 1.5, alpha: 0.8 }, clamp(intro * 1.4 - 0.4));
+  sketch(ctx, ellipse({ x: base.x, y: topY }, rx * 0.62, ry * 0.62), { seed: 131, jitter: 0.6, width: 1, alpha: 0.45, passes: 1 }, clamp(intro * 1.4 - 0.5));
+
+  Lt.clouds.forEach((cl, i) => {
+    const pts: P[] = [];
+    const bumps = 5;
+    for (let b = 0; b < bumps; b++) {
+      const cx = cl.c.x - cl.r * 1.6 + (b / (bumps - 1)) * cl.r * 3.2;
+      const r = cl.r * (b === 0 || b === bumps - 1 ? 0.55 : b === 2 ? 1 : 0.8);
+      pts.push(...ellipse({ x: cx, y: cl.c.y }, r, r, Math.PI, Math.PI * 2, 10));
+    }
+    sketch(ctx, pts, { seed: 80 + i, jitter: 0.8, width: 1.1, alpha: 0.38, passes: 1 }, intro);
+    sketch(ctx, [{ x: cl.c.x - cl.r * 2.15, y: cl.c.y }, { x: cl.c.x + cl.r * 2.15, y: cl.c.y }], { seed: 85 + i, jitter: 0.6, width: 1, alpha: 0.3, passes: 1 }, intro);
+  });
+
+  // ---------------- the document on the desk: the current one goes into the envelope, the next one is drawn
   const envC = { x: L.x, y: L.y + S * 0.38 };
   const envTop = envC.y - S * 0.275;
-  const slide = ph(t, T.slide);
-  const docDraw = ph(t, T.doc, false);
-  if (t < T.flap[1]) {
+  const docInEnvelope = t < C.flap[1];
+  const docDraw = docInEnvelope ? intro : ph(t, C.nextDoc, false);
+  const slide = docInEnvelope ? ph(t, C.slide) : 0;
+  if (docDraw > 0 && (docInEnvelope || t >= C.nextDoc[0])) {
     const dw = S * 0.62;
     const dh = S * 0.8;
     const x0 = L.x - dw / 2;
     const y0 = L.y - S * 0.72 + slide * S * 0.95;
     const at = (u: number, v: number): P => ({ x: x0 + u * dw, y: y0 + v * dh });
     ctx.save();
-    if (t > T.envelope[0]) {
-      // once the envelope is there, the sheet disappears into it
-      ctx.beginPath();
+    if (docInEnvelope && t > C.envelope[0]) {
+      ctx.beginPath(); // once the envelope is there, the sheet disappears into it
       ctx.rect(0, 0, Lt.w, envTop + 1);
       ctx.clip();
     }
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fillStyle = `rgba(255,255,255,${0.92 * clamp(docDraw * 3)})`;
     ctx.fillRect(x0, y0, dw, dh);
     const f = 0.3;
     sketch(ctx, [at(0, 0), at(1 - f, 0), at(1, f * 0.78), at(1, 1), at(0, 1), at(0, 0)], { seed: 21, jitter: j, width: 1.8, alpha: 0.85, passes: 3 }, clamp(docDraw / 0.45));
@@ -294,119 +351,117 @@ function render(ctx: CanvasRenderingContext2D, Lt: Layout, t: number) {
     ctx.restore();
   }
 
-  // ---------------- envelope (flap open, then closed), folding into a paper plane that takes off
-  const envDraw = ph(t, T.envelope, false);
-  const fold = ph(t, T.fold);
-  const flightU = ph(t, T.flight);
-  const inFlight = t >= T.fold[1];
-  if (envDraw > 0 && t < T.flight[1] + 0.05) {
-    const flap = ph(t, T.flap);
-    const openA = { x: envC.x, y: envTop - S * 0.32 };
-    const arriveFade = 1 - ph(t, [T.flight[1] - 0.15, T.flight[1] + 0.05], false);
-    const takeoff = Math.atan2(along(Lt.path, 0.01).y - envC.y, along(Lt.path, 0.01).x - envC.x);
+  // ---------------- envelope, folding into a paper plane, flying over the headline
+  const envDraw = ph(t, C.envelope, false);
+  const fold = ph(t, C.fold);
+  const flightU = ph(t, C.flight);
+  const inFlight = t >= C.fold[1];
+  if (envDraw > 0 && t < C.flight[1] + 0.05) {
+    const takeoff = Math.atan2(along(Lt.flight, 0.01).y - envC.y, along(Lt.flight, 0.01).x - envC.x);
     const drawSegs = (segs: Seg[], fade: number, progress: (i: number) => number) =>
       segs.forEach(([a, b], i) =>
         sketch(ctx, [a, b], { seed: 50 + i, jitter: j * (inFlight ? 0.6 : 1), width: 1.7, alpha: 0.85, passes: 2 }, progress(i), fade),
       );
     if (!inFlight) {
-      // the envelope, flap opening then closing; it shrinks and fades as the plane takes its place
       const env = envelopeSegs(envC, S);
-      const A = lerpP(openA, env[4]![1], flap);
+      const openA = { x: envC.x, y: envTop - S * 0.32 };
+      const A = lerpP(openA, env[4]![1], ph(t, C.flap));
       env[4] = [env[4]![0], A];
       env[5] = [A, env[5]![1]];
       const k = 1 - 0.35 * fold;
       const shrink = (p: P): P => ({ x: envC.x + (p.x - envC.x) * k, y: envC.y + (p.y - envC.y) * k });
-      ctx.fillStyle = `rgba(255,255,255,${0.9 * (1 - fold)})`; // paper: the desk sketch does not show through
+      ctx.fillStyle = `rgba(255,255,255,${0.9 * (1 - fold)})`; // paper: the desk does not show through
       ctx.fillRect(envC.x - S * 0.45 * k, envC.y - S * 0.275 * k, S * 0.9 * k, S * 0.55 * k);
       drawSegs(env.map(([a, b]) => [shrink(a), shrink(b)] as Seg), 1 - fold, (i) => clamp(envDraw * 8 - i * 0.8));
       if (fold > 0) drawSegs(planeSegs(envC, S * 0.9, takeoff), fold, () => 1);
     } else {
-      const pos = along(Lt.path, flightU);
-      const ahead = along(Lt.path, Math.min(1, flightU + 0.01));
+      const pos = along(Lt.flight, flightU);
+      const ahead = along(Lt.flight, Math.min(1, flightU + 0.01));
       const angle = Math.atan2(ahead.y - pos.y, ahead.x - pos.x);
       const scale = 0.9 * (1 - Math.sin(flightU * Math.PI) * APEX_SHRINK); // smaller far away, over the headline
-      drawSegs(planeSegs(pos, S * scale, angle), arriveFade, () => 1);
+      drawSegs(planeSegs(pos, S * scale, angle), 1 - ph(t, [C.flight[1] - 0.15, C.flight[1] + 0.05], false), () => 1);
     }
   }
-
-  // ---------------- the trail and the clouds
+  // comet trail: drawn behind the plane, erased from its tail, gone once the plane has landed
   if (inFlight) {
-    const pts: P[] = [];
-    for (let i = 0; i <= 80; i++) pts.push(along(Lt.path, (i / 80) * flightU));
-    sketch(ctx, pts, { seed: 70, jitter: 0.6, width: 1.3, alpha: 0.5, passes: 1, dash: [3, 9] }, 1);
+    const trail = slice(Lt.flight, ph(t, C.trailTail, false), flightU);
+    sketch(ctx, trail, { seed: 70, jitter: 0.6, width: 1.3, alpha: 0.5, passes: 1, dash: [3, 9] }, 1);
   }
-  Lt.clouds.forEach((cl, i) => {
-    const pts: P[] = [];
-    const bumps = 5;
-    for (let b = 0; b < bumps; b++) {
-      const cx = cl.c.x - cl.r * 1.6 + (b / (bumps - 1)) * cl.r * 3.2;
-      const r = cl.r * (b === 0 || b === bumps - 1 ? 0.55 : b === 2 ? 1 : 0.8);
-      pts.push(...ellipse({ x: cx, y: cl.c.y }, r, r, Math.PI, Math.PI * 2, 10));
-    }
-    sketch(ctx, pts, { seed: 80 + i, jitter: 0.8, width: 1.1, alpha: 0.38, passes: 1 }, ph(t, T.clouds, false));
-    sketch(ctx, [{ x: cl.c.x - cl.r * 2.15, y: cl.c.y }, { x: cl.c.x + cl.r * 2.15, y: cl.c.y }], { seed: 85 + i, jitter: 0.6, width: 1, alpha: 0.3, passes: 1 }, ph(t, T.clouds, false));
-  });
 
-  // ---------------- right: the importer's funds under a padlock, unlocked when the documents land
-  wash(ctx, { x: R.x, y: R.y + S * 0.15 }, S * 0.85, 0.14);
-  const right = ph(t, T.right, false);
-  const unlock = ph(t, T.unlock);
-  const coins = 6;
-  const rx = S * 0.34;
-  const ry = S * 0.1;
-  const th = S * 0.075;
-  const base = { x: R.x + S * 0.08, y: R.y + S * 0.62 };
-  for (let i = 0; i < coins; i++) {
-    const y = base.y - i * th;
-    const pr = clamp(right * coins * 1.2 - i);
-    sketch(ctx, ellipse({ x: base.x, y }, rx, ry, 0, Math.PI, 18), { seed: 90 + i, jitter: j * 0.6, width: 1.3, alpha: 0.7 }, pr);
-    sketch(ctx, [{ x: base.x - rx, y }, { x: base.x - rx, y: y - th }], { seed: 100 + i, jitter: 0.5, alpha: 0.6, passes: 1 }, pr);
-    sketch(ctx, [{ x: base.x + rx, y }, { x: base.x + rx, y: y - th }], { seed: 110 + i, jitter: 0.5, alpha: 0.6, passes: 1 }, pr);
-    hatch(ctx, { x: base.x - rx * 0.8, y: y + ry * 0.55 }, { x: base.x + rx * 0.8, y: y + ry * 0.55 }, 9, { x: 0, y: -th * 0.8 }, 120 + i * 10, pr, 1, 0.22);
-  }
-  const topY = base.y - coins * th;
-  sketch(ctx, ellipse({ x: base.x, y: topY }, rx, ry), { seed: 130, jitter: j * 0.6, width: 1.5, alpha: 0.8 }, clamp(right * 1.4 - 0.4));
-  sketch(ctx, ellipse({ x: base.x, y: topY }, rx * 0.62, ry * 0.62), { seed: 131, jitter: 0.6, width: 1, alpha: 0.45, passes: 1 }, clamp(right * 1.4 - 0.5));
-
-  // padlock in front of the stack
-  const lockFade = 1 - ph(t, [T.unlock[1] - 0.1, T.unlock[1] + 0.5], false);
+  // ---------------- the padlock: open when the documents land, a new one closes for the next credit
+  const unlock = ph(t, C.unlock);
+  const reclosing = t >= C.relock[0];
+  const lockDraw = reclosing ? ph(t, C.relock, false) : intro;
+  const lockFade = reclosing ? 1 : 1 - ph(t, C.lockOut, false);
+  const lift = reclosing ? 0 : unlock * S * 0.1;
   const lc = { x: R.x - S * 0.2, y: R.y + S * 0.38 };
   const bw = S * 0.32;
   const bh = S * 0.26;
-  const lockDraw = clamp(right * 1.5 - 0.3);
   if (lockFade > 0 && lockDraw > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${0.95 * lockFade})`;
+    ctx.fillStyle = `rgba(255,255,255,${0.95 * lockFade * clamp(lockDraw * 3)})`;
     ctx.fillRect(lc.x - bw / 2, lc.y - bh / 2, bw, bh);
+    sketch(
+      ctx,
+      [{ x: lc.x - bw / 2, y: lc.y - bh / 2 }, { x: lc.x + bw / 2, y: lc.y - bh / 2 }, { x: lc.x + bw / 2, y: lc.y + bh / 2 }, { x: lc.x - bw / 2, y: lc.y + bh / 2 }, { x: lc.x - bw / 2, y: lc.y - bh / 2 }],
+      { seed: 140, jitter: j * 0.7, width: 1.8, alpha: 0.85, passes: 3 },
+      clamp(lockDraw * 1.5),
+      lockFade,
+    );
+    const sx = lc.x + (reclosing ? 0 : unlock * S * 0.05);
+    const shackle = ellipse({ x: sx, y: lc.y - bh / 2 - lift }, bw * 0.32, bh * 0.75, Math.PI, Math.PI * 2, 18);
+    shackle.unshift({ x: sx - bw * 0.32, y: lc.y - bh / 2 });
+    shackle.push({ x: sx + bw * 0.32, y: lc.y - bh / 2 - lift }); // the right leg comes out of the body as it lifts
+    sketch(ctx, shackle, { seed: 141, jitter: j * 0.5, width: 2, alpha: 0.85, passes: 2 }, clamp(lockDraw * 1.5 - 0.2), lockFade);
+    sketch(ctx, [{ x: lc.x, y: lc.y - bh * 0.05 }, { x: lc.x, y: lc.y + bh * 0.22 }], { seed: 142, jitter: 0.4, width: 2.2, alpha: 0.8, passes: 1 }, clamp(lockDraw * 1.5 - 0.3), lockFade);
+    hatch(ctx, { x: lc.x - bw * 0.42, y: lc.y + bh * 0.42 }, { x: lc.x + bw * 0.42, y: lc.y + bh * 0.42 }, 10, { x: bw * 0.08, y: -bh * 0.3 }, 143, clamp(lockDraw * 1.5 - 0.3), lockFade, 0.25);
   }
-  sketch(
-    ctx,
-    [{ x: lc.x - bw / 2, y: lc.y - bh / 2 }, { x: lc.x + bw / 2, y: lc.y - bh / 2 }, { x: lc.x + bw / 2, y: lc.y + bh / 2 }, { x: lc.x - bw / 2, y: lc.y + bh / 2 }, { x: lc.x - bw / 2, y: lc.y - bh / 2 }],
-    { seed: 140, jitter: j * 0.7, width: 1.8, alpha: 0.85, passes: 3 },
-    lockDraw,
-    lockFade,
-  );
-  const lift = unlock * S * 0.1;
-  const sx = lc.x + unlock * S * 0.05;
-  const shackle = ellipse({ x: sx, y: lc.y - bh / 2 - lift }, bw * 0.32, bh * 0.75, Math.PI, Math.PI * 2, 18);
-  shackle.unshift({ x: sx - bw * 0.32, y: lc.y - bh / 2 });
-  shackle.push({ x: sx + bw * 0.32, y: lc.y - bh / 2 - lift }); // the right leg comes out of the body as it lifts
-  sketch(ctx, shackle, { seed: 141, jitter: j * 0.5, width: 2, alpha: 0.85, passes: 2 }, clamp(right * 1.5 - 0.5), lockFade);
-  sketch(ctx, [{ x: lc.x, y: lc.y - bh * 0.05 }, { x: lc.x, y: lc.y + bh * 0.22 }], { seed: 142, jitter: 0.4, width: 2.2, alpha: 0.8, passes: 1 }, clamp(right * 1.5 - 0.6), lockFade);
-  hatch(ctx, { x: lc.x - bw * 0.42, y: lc.y + bh * 0.42 }, { x: lc.x + bw * 0.42, y: lc.y + bh * 0.42 }, 10, { x: bw * 0.08, y: -bh * 0.3 }, 143, clamp(right * 1.5 - 0.6), lockFade, 0.25);
 
-  // the seal: paid, final in under a second
-  const seal = ph(t, T.seal, false);
-  if (seal > 0) {
+  // ---------------- the seal: paid, final in under a second
+  const seal = ph(t, C.seal, false);
+  const sealFade = 1 - ph(t, C.sealOut, false);
+  if (seal > 0 && sealFade > 0) {
     const sc = { x: R.x + S * 0.12, y: R.y - S * 0.42 };
     const sr = S * 0.15;
-    wash(ctx, sc, sr * 2.6, 0.22 * seal);
-    sketch(ctx, ellipse(sc, sr, sr, -Math.PI / 2, Math.PI * 1.62), { seed: 150, jitter: 0.8, width: 1.8, alpha: 0.85, passes: 3 }, clamp(seal * 1.6));
-    hatch(ctx, { x: sc.x - sr * 0.6, y: sc.y + sr * 0.5 }, { x: sc.x + sr * 0.5, y: sc.y + sr * 0.6 }, 8, { x: sr * 0.25, y: -sr * 0.9 }, 151, clamp(seal * 1.4 - 0.3), 1, 0.2);
-    sketch(ctx, [{ x: sc.x - sr * 0.45, y: sc.y }, { x: sc.x - sr * 0.1, y: sc.y + sr * 0.35 }, { x: sc.x + sr * 0.5, y: sc.y - sr * 0.38 }], { seed: 152, jitter: 0.6, width: 2.4, alpha: 0.9 }, clamp(seal * 2 - 0.9));
+    wash(ctx, sc, sr * 2.6, 0.22 * seal * sealFade);
+    sketch(ctx, ellipse(sc, sr, sr, -Math.PI / 2, Math.PI * 1.62), { seed: 150, jitter: 0.8, width: 1.8, alpha: 0.85, passes: 3 }, clamp(seal * 1.6), sealFade);
+    hatch(ctx, { x: sc.x - sr * 0.6, y: sc.y + sr * 0.5 }, { x: sc.x + sr * 0.5, y: sc.y + sr * 0.6 }, 8, { x: sr * 0.25, y: -sr * 0.9 }, 151, clamp(seal * 1.4 - 0.3), sealFade, 0.2);
+    sketch(ctx, [{ x: sc.x - sr * 0.45, y: sc.y }, { x: sc.x - sr * 0.1, y: sc.y + sr * 0.35 }, { x: sc.x + sr * 0.5, y: sc.y - sr * 0.38 }], { seed: 152, jitter: 0.6, width: 2.4, alpha: 0.9 }, clamp(seal * 2 - 0.9), sealFade);
     ctx.font = `${Math.max(11, Math.round(S / 20))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
     ctx.textAlign = "center";
-    ctx.fillStyle = `rgba(${INK}, ${0.65 * clamp(seal * 2 - 1)})`;
+    ctx.fillStyle = `rgba(${INK}, ${0.65 * clamp(seal * 2 - 1) * sealFade})`;
     ctx.fillText("paid · final in 0.4 s", sc.x, sc.y + sr * 1.75);
+  }
+
+  // ---------------- the coin rolls back to the exporter's desk
+  const coinU = ph(t, C.coin);
+  if (t >= C.coin[0] && t < C.coinTail[1]) {
+    sketch(ctx, slice(Lt.roll, ph(t, C.coinTail, false), coinU), { seed: 160, jitter: 0.5, width: 1.2, alpha: 0.45, passes: 1, dash: [2, 8] }, 1);
+  }
+  if (t >= C.coin[0] && t < C.coin[1] + 0.3) {
+    const pos = along(Lt.roll, coinU);
+    const r = S * 0.065;
+    const fade = clamp((t - C.coin[0]) / 0.15) * (1 - clamp((t - C.coin[1]) / 0.3));
+    const spin = coinU * Math.PI * 9; // rolling: the hatches turn with the distance
+    ctx.fillStyle = `rgba(255,255,255,${0.95 * fade})`;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    sketch(ctx, ellipse(pos, r, r), { seed: 161, jitter: 0.5, width: 1.6, alpha: 0.85, passes: 2 }, 1, fade);
+    sketch(ctx, ellipse(pos, r * 0.62, r * 0.62), { seed: 162, jitter: 0.4, width: 1, alpha: 0.5, passes: 1 }, 1, fade);
+    for (let k = 0; k < 3; k++) {
+      const a = spin + (k * Math.PI) / 3;
+      sketch(ctx, [{ x: pos.x + Math.cos(a) * r * 0.35, y: pos.y + Math.sin(a) * r * 0.35 }, { x: pos.x - Math.cos(a) * r * 0.35, y: pos.y - Math.sin(a) * r * 0.35 }], { seed: 163 + k, jitter: 0.3, width: 0.9, alpha: 0.45, passes: 1 }, 1, fade);
+    }
+    // a small burst where it lands
+    const burst = ph(t, [C.coin[1] - 0.05, C.coin[1] + 0.35], false);
+    if (burst > 0 && burst < 1) {
+      for (let k = 0; k < 5; k++) {
+        const a = -Math.PI / 2 + (k - 2) * 0.45;
+        const d0 = r * (1.3 + burst);
+        const d1 = r * (1.9 + burst * 1.4);
+        sketch(ctx, [{ x: pos.x + Math.cos(a) * d0, y: pos.y + Math.sin(a) * d0 }, { x: pos.x + Math.cos(a) * d1, y: pos.y + Math.sin(a) * d1 }], { seed: 170 + k, jitter: 0.3, width: 1.2, alpha: 0.6, passes: 1 }, 1, 1 - burst);
+      }
+    }
   }
 
   ctx.restore();
@@ -420,8 +475,8 @@ export function HeroSketch() {
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // a fixed moment to show instead of the animation: reduced motion shows the plane mid-flight
-    let still: number | null = reduced ? 5.9 : null;
+    // a fixed moment to show instead of the animation: reduced motion shows the plane over the headline
+    let still: number | null = reduced ? 3.4 : null;
     let lay: Layout | null = null;
     let raf = 0;
     let running = false;
@@ -436,6 +491,7 @@ export function HeroSketch() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const section = canvas.closest("section");
       const panel = section?.querySelector("[data-hero-panel]")?.getBoundingClientRect();
+      const cta = section?.querySelector("[data-hero-cta]")?.getBoundingClientRect();
       // the headline's text box, not its full-width block
       const h1 = section?.querySelector("h1");
       let title: Band["title"] = null;
@@ -445,13 +501,28 @@ export function HeroSketch() {
         const r = range.getBoundingClientRect();
         title = { top: r.top - rect.top, left: r.left - rect.left, right: r.right - rect.left };
       }
-      lay = layout(rect.width, rect.height, panel ? { panelLeft: panel.left - rect.left, panelRight: panel.right - rect.left, title } : null);
-      if (still !== null) render(ctx, lay, still); // resizing clears the canvas: redraw the still frame
+      lay = layout(
+        rect.width,
+        rect.height,
+        panel
+          ? {
+              panelLeft: panel.left - rect.left,
+              panelRight: panel.right - rect.left,
+              panelTop: panel.top - rect.top,
+              ctaBottom: cta ? cta.bottom - rect.top : null,
+              title,
+            }
+          : null,
+      );
+      if (still !== null) render(ctx, lay, still, 1); // resizing clears the canvas: redraw the still frame
     };
 
+    // the scenery is sketched in once; after that the cycle repeats with no seam
     const frame = (now: number) => {
       if (!running || !lay) return;
-      render(ctx, lay, ((now - start) / 1000) % LOOP);
+      const e = (now - start) / 1000;
+      if (e < INTRO) render(ctx, lay, 0, ease(e / INTRO));
+      else render(ctx, lay, (e - INTRO) % CYCLE, 1);
       raf = requestAnimationFrame(frame);
     };
     const play = () => {
@@ -471,11 +542,11 @@ export function HeroSketch() {
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
     if (import.meta.env.DEV) {
-      // dev only: draw a given second of the story (?heroAt=5.8 or window.__heroAt(5.8)) to inspect frames
+      // dev only: draw a given second of the cycle (?heroAt=3.4 or window.__heroAt(3.4)) to inspect frames
       const at = (t: number) => {
         pause();
         still = t;
-        if (lay) render(ctx, lay, t);
+        if (lay) render(ctx, lay, t, 1);
       };
       (window as unknown as { __heroAt?: (t: number) => void }).__heroAt = at;
       const q = new URLSearchParams(location.search).get("heroAt");
