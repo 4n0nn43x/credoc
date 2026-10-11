@@ -95,7 +95,27 @@ npm run dev     # http://localhost:5173 and /app/
 
 `npm test` runs the relayer and view-logic tests. `npm run osen` recompiles the theme from a licensed copy of the Osen template (`OSEN_DIR`); only the compiled CSS is in this repo.
 
-To deploy, set the same variables plus the server-side `RELAYER_KEY` (a wallet holding a little USDC for gas) in Vercel, then deploy `web/`.
+## Hosting and CI/CD
+
+credoc.xyz runs on a single server behind a shared Caddy (TLS, security headers, CSP). The image (`Dockerfile`) is a
+distroless Node runtime serving the built site and the relayer, run read-only, non-root and without capabilities
+(`deploy/compose.yaml`). The relayer key lives only in the server's `.env`.
+
+Every pull request to `main` runs the gates in `.github/workflows/ci.yml`:
+
+| Gate | Tool | Blocks |
+|---|---|---|
+| Workflow audit | zizmor | yes |
+| Secrets, full history | gitleaks | yes |
+| Dependencies | Trivy, fixable high/critical | yes |
+| Contracts | forge test (unit, fuzz, invariants) | yes |
+| SDK and web | typecheck, tests, build | yes |
+| Image | hadolint, Trivy, fixable high/critical | yes |
+| Source | Semgrep | report only for now |
+
+A merge to `main` reruns them and ships the exact image that was scanned: the deploy job streams it over SSH with a key
+that can only run `deploy/deploy.sh`, which loads it, waits for the healthcheck and rolls back on failure. Actions are
+pinned by commit SHA and Dependabot proposes updates weekly. Disclosure policy: `SECURITY.md`.
 
 ## Attestor CLI
 
