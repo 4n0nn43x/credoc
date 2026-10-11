@@ -3,7 +3,7 @@
 #   docker build -t credoc:local .        (context = repo root: the web app depends on ../sdk)
 
 # ---- build: dependencies, typecheck, Vite build, server bundle. Never reaches the runtime image.
-FROM node:22.20-alpine3.22@sha256:dbcedd8aeab47fbc0f4dd4bffa55b7c3c729a707875968d467aaaea42d6225af AS build
+FROM node:26.3-alpine3.22@sha256:c7932b9e5e337b0e733d6e16abc1b0e104759e8b05e59ed56586cce967d26dfe AS build
 WORKDIR /src
 # manifests first: dependency layers only rebuild when a lockfile changes
 COPY sdk/package.json sdk/package-lock.json sdk/
