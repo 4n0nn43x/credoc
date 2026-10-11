@@ -70,7 +70,7 @@ export async function relayPresentation(input: unknown, env: RelayEnv): Promise<
 
   const chain = { ...arc, rpcUrls: { default: { http: [env.rpcUrl || arc.rpcUrls.default.http[0]] } } };
   const account = privateKeyToAccount(env.relayerKey as Hex);
-  const pub = createPublicClient({ chain, transport: http() });
+  const pub = createPublicClient({ chain, transport: http(), pollingInterval: 500 }); // Arc: sub-second finality
   const wallet = createWalletClient({ account, chain, transport: http() });
   const args = [creditId, Number(tranche), Number(doc), docHash, deadline, signature as Hex] as const;
 
