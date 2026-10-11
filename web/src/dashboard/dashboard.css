@@ -20,6 +20,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .credoc-wordmark { font-weight: 600; font-size: 1rem; letter-spacing: -0.01em; color: var(--credoc-ink); }
 
 /* amounts: whole part prominent, cents and currency muted */
+.amount { white-space: nowrap; }
 .amount .cents, .amount .ccy { color: rgba(25, 25, 25, 0.45); font-size: 0.7em; }
 .amount .ccy { margin-left: 0.3em; letter-spacing: 0.02em; }
 
