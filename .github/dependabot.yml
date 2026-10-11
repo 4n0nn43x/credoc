@@ -1,17 +1,32 @@
-# Pinned actions, lockfiles and base-image digests only stay safe if they move: weekly update PRs, after a 7-day
-# cooldown so a freshly published (possibly compromised) release is never pulled the day it ships.
+# Pinned actions, lockfiles and base-image digests only stay safe if they move. Weekly, grouped so each ecosystem
+# opens one reviewable PR, after a 7-day cooldown so a freshly published (possibly compromised) release is never pulled
+# the day it ships. Major versions are left out of routine updates (they need a deliberate migration); security
+# updates are not affected by these rules and still arrive on their own.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }
+    groups:
+      actions: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directories: [/contracts, /sdk, /web]
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }
+    groups:
+      npm-minor-patch: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
