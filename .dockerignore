@@ -1,0 +1,11 @@
+# only sdk/ and web/ sources go into the build context
+**/node_modules
+**/dist
+**/dist-server
+**/.env
+**/.env.*
+!**/.env.example
+.git
+contracts
+docs
+*.log

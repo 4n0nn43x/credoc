@@ -10,7 +10,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/dashboard/lib/*.test.ts api/*.test.ts"
+    "test": "node --import tsx --test src/dashboard/lib/*.test.ts api/*.test.ts server/*.test.ts",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist-server/server.mjs --log-level=warning"
   },
   "dependencies": {
     "@credoc/sdk": "file:../sdk",
@@ -18,7 +19,7 @@
     "lucide-react": "0.542.0",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "react-router-dom": "6.30.1",
+    "react-router-dom": "6.30.3",
     "viem": "2.57.4"
   },
   "devDependencies": {

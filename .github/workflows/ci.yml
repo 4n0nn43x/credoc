@@ -1,0 +1,172 @@
+# Credoc CI/CD. Every pull request to main runs the gates; a push to main (a merge) runs them again on the merged code,
+# then ships the exact image that was built and scanned to the server.
+#
+# Gate contract (owner: repo admin; SLA: critical 48 h, high 7 days):
+#   blocking : workflow audit (zizmor), secrets (gitleaks), dependencies (Trivy, fixable high/critical), contracts and
+#              web tests, Dockerfile lint (hadolint), image (Trivy, fixable high/critical)
+#   report   : SAST (Semgrep), until two weeks of findings justify flipping it to blocking
+# Scanners run as version-pinned containers: no third-party action sees the repository token.
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  workflow-audit:
+    name: workflow audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - name: zizmor
+        run: docker run --rm -v "$PWD:/src:ro" ghcr.io/zizmorcore/zizmor:1.29.0 --min-severity medium /src/.github/workflows
+
+  secrets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0             # the whole history: a secret removed later is still exposed
+          persist-credentials: false
+      - name: gitleaks
+        run: docker run --rm -v "$PWD:/src:ro" zricethezav/gitleaks:v8.30.0 git /src --redact --no-banner --exit-code 1
+
+  dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - name: Trivy (fixable high and critical only)
+        run: >-
+          docker run --rm -v "$PWD:/src:ro" aquasec/trivy:0.73.0 fs
+          --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1
+          --skip-dirs /src/contracts/lib /src
+
+  sast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true          # report-only for now (see the gate contract at the top)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - name: Semgrep
+        run: >-
+          docker run --rm -v "$PWD:/src:ro" -w /src semgrep/semgrep:1.172.0 semgrep scan
+          --config p/security-audit --config p/secrets --config p/typescript
+          --exclude contracts/lib --exclude web/src/dashboard/osen --metrics=off --error
+
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults: { run: { working-directory: contracts } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: "22.20.0" }
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with: { version: v1.7.1 }
+      - run: forge build
+      - run: forge test            # unit, fuzz and invariant tests; the Arc fork tests skip outside Arc
+
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: "22.20.0" }
+      - name: SDK
+        working-directory: sdk
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+      - name: Web
+        working-directory: web
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run build
+
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - name: Dockerfile lint
+        run: docker run --rm -i hadolint/hadolint:v2.12.0-alpine hadolint - < Dockerfile
+      - name: Build
+        env:
+          CREDOC_ADDRESS: ${{ vars.VITE_CREDOC_ADDRESS }}
+          CREDOC_FROM_BLOCK: ${{ vars.VITE_CREDOC_FROM_BLOCK }}
+          SHA: ${{ github.sha }}
+        run: >-
+          docker build
+          --build-arg VITE_CREDOC_ADDRESS="$CREDOC_ADDRESS"
+          --build-arg VITE_CREDOC_FROM_BLOCK="${CREDOC_FROM_BLOCK:-0}"
+          -t "credoc:$SHA" .
+      - name: Trivy image (fixable high and critical only)
+        env: { SHA: "${{ github.sha }}" }
+        run: >-
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.73.0 image
+          --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "credoc:$SHA"
+      - name: Save the scanned image for the deploy job
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env: { SHA: "${{ github.sha }}" }
+        run: docker save "credoc:$SHA" | gzip > credoc-image.tgz
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: credoc-image
+          path: credoc-image.tgz
+          retention-days: 1
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [workflow-audit, secrets, dependencies, contracts, web, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://credoc.xyz
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false      # never interrupt a deploy halfway
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: credoc-image }
+      - name: Ship to the server
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}           # restricted key: can only run deploy.sh
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}   # pinned host key, no trust on first use
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          SHA: ${{ github.sha }}
+        run: |
+          umask 077
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/known_hosts"
+          ssh -i "$RUNNER_TEMP/key" -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes "deploy@$DEPLOY_HOST" "deploy $SHA" < credoc-image.tgz
+          rm -f "$RUNNER_TEMP/key"
+      - name: Smoke test
+        run: curl -fsS --retry 5 --retry-delay 3 --retry-all-errors https://credoc.xyz/healthz

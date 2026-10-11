@@ -1,0 +1,23 @@
+# Credoc behind the server's shared Caddy (~/apps/edge). Never published on the host: only Caddy reaches it through the
+# "edge" network. Site block: ~/apps/edge/sites/credoc.caddy. Deployed by deploy.sh (the CI key's forced command).
+name: credoc
+
+services:
+  web:
+    image: credoc:${TAG:?TAG is set by deploy.sh}
+    container_name: credoc-web        # stable name: what Caddy resolves
+    restart: unless-stopped
+    env_file: .env                    # RELAYER_KEY (and optionally VITE_RPC_URL for the relayer): never in the image
+    networks: [edge]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    pids_limit: 64
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+networks:
+  edge:
+    name: edge
+    external: true

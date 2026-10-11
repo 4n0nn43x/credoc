@@ -1,0 +1,17 @@
+# Pinned actions, lockfiles and base-image digests only stay safe if they move: weekly update PRs, after a 7-day
+# cooldown so a freshly published (possibly compromised) release is never pulled the day it ships.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: npm
+    directories: [/contracts, /sdk, /web]
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    open-pull-requests-limit: 5

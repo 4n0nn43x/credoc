@@ -1,0 +1,14 @@
+credoc.xyz {
+	import secure
+	# Own scripts only. Inline styles: React style props and the Osen theme. Fonts: Google Fonts and the Mackinac
+	# display face (onlinewebfonts). The dashboard reads Arc mainnet from the browser, so the RPC is a connect source.
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://db.onlinewebfonts.com; font-src 'self' https://fonts.gstatic.com https://db.onlinewebfonts.com; img-src 'self' data:; connect-src 'self' https://rpc.mainnet.arc.io; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	request_body {
+		max_size 32KB
+	}
+	reverse_proxy credoc-web:8080
+}
+
+www.credoc.xyz {
+	redir https://credoc.xyz{uri} permanent
+}
