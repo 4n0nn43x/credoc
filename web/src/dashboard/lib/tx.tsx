@@ -130,7 +130,13 @@ function ToastStack({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: number
                   {t.state === "wallet" && "Confirm in your wallet…"}
                   {t.state === "sent" && "Sent. Waiting for the block…"}
                   {t.state === "confirmed" &&
-                    (t.seconds !== undefined ? `Final in ${t.seconds.toFixed(2)} s` : (t.message ?? "Done"))}
+                    (t.seconds !== undefined ? (
+                      <>
+                        Final<span className="credoc-finality"> in {t.seconds.toFixed(2)} s</span>
+                      </>
+                    ) : (
+                      (t.message ?? "Done")
+                    ))}
                   {(t.state === "failed" || t.state === "info") && t.message}
                 </div>
                 {t.hash && (
