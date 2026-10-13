@@ -182,12 +182,14 @@ export function handler(
       const r = await readJson(req, res);
       if (!r) return;
       const hit = parseHit(r.body, hostOf(req));
-      if (hit && store && req.headers.dnt !== "1") store.hit(hit, ipOf(req), String(req.headers["user-agent"] ?? ""));
+      if (hit && store && req.headers.dnt !== "1" && hostOf(req) !== admin?.host) store.hit(hit, ipOf(req), String(req.headers["user-agent"] ?? ""));
       res.writeHead(204, { "cache-control": "no-store" });
       return res.end();
     }
 
     if (path.startsWith("/api/admin/")) {
+      // on any other host the admin does not exist: no hint that it lives elsewhere
+      if (admin?.host && hostOf(req) !== admin.host) return json(res, 404, { error: "not found" });
       if (!admin || !store) return json(res, 503, { error: "admin is not configured" });
       if (path === "/api/admin/nonce" && req.method === "GET") return json(res, 200, { message: loginMessage(hostOf(req)) });
       if (path === "/api/admin/login" && req.method === "POST") {
