@@ -208,7 +208,8 @@ export function Overview() {
                     tickAmount: 6,
                     labels: { rotate: 0, style: { fontSize: "11px" } },
                   },
-                  yaxis: { labels: { formatter: (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${Math.round(v)}`) } },
+                  // small volumes keep their cents, so ticks never read 0, 0, 1 for a one-dollar day
+                  yaxis: { min: 0, forceNiceScale: true, labels: { formatter: (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v >= 10 ? `${Math.round(v)}` : v.toFixed(2).replace(/\.?0+$/, "")) } },
                   plotOptions: { bar: { columnWidth: "60%", borderRadius: 2 } },
                   tooltip: { y: { formatter: (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) } },
                 }}
