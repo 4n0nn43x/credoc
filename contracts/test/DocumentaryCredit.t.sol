@@ -850,6 +850,16 @@ contract DocumentaryCreditTest is Test {
         assertEq(usdc.balanceOf(financier) - before, 1000e6 - 1e6);
     }
 
+    /// review 2026-10-13 (I-1): a pass answering a non-boolean word gives no discount and blocks nothing
+    function test_plan_malformedAnswerNeverBlocks() public {
+        dc.setFee(25);
+        dc.setPass(ICredocPass(address(new WeirdPass())), 10);
+        uint256 id = _open(1000e6, 0);
+        assertEq(dc.getCredit(id).feeBps, 25);
+        _presentBoth(id, 0);
+        assertEq(usdc.balanceOf(exporter), 1000e6 - 2.5e6);
+    }
+
     function test_plan_brokenPassNeverBlocksSettlement() public {
         dc.setFee(25);
         dc.setPass(ICredocPass(address(reg)), 10); // has no isActive: every lookup fails, standard rate applies
@@ -886,13 +896,24 @@ contract DocumentaryCreditTest is Test {
         assertEq(usdc.balanceOf(address(dc)), 18.75e6);
     }
 
-    function test_partner_unregisteredGetsOnlyItsIntegratorFee() public {
-        address integrator = makeAddr("integrator");
-        dc.setFee(25);
-        uint256 id = _openVia(integrator, 20, 1000e6);
-        _presentBoth(id, 0);
-        assertEq(dc.owed(integrator, usdc), 2e6);
-        assertEq(dc.fees(usdc), 2.5e6);
+    /// review 2026-10-13 (M-1, L-1): only owner-registered partners qualify, never a party to the credit, so an
+    /// importer cannot name itself (or any address) to skim the exporter or cut Credoc's fee
+    function test_partner_onlyRegisteredAndNeverAParty() public {
+        DocumentaryCredit.OpenParams memory p = _params(1000e6, 0);
+        p.partner = makeAddr("integrator"); // not registered
+        p.integratorFeeBps = 20;
+        _expectBad(p);
+        p.integratorFeeBps = 0;
+        _expectBad(p);
+        dc.setPartner(importer, 2500);
+        dc.setPartner(exporter, 2500);
+        p.partner = importer;
+        _expectBad(p);
+        p.partner = exporter;
+        _expectBad(p);
+        dc.setPartner(makeAddr("integrator"), 0); // a zero share unregisters
+        p.partner = makeAddr("integrator");
+        _expectBad(p);
     }
 
     function test_partner_capsAndRules() public {
@@ -911,6 +932,8 @@ contract DocumentaryCreditTest is Test {
         dc.setPartner(partner, 5001);
         vm.expectRevert(DocumentaryCredit.BadParams.selector);
         dc.setPartner(address(0), 100);
+        vm.expectRevert(DocumentaryCredit.BadParams.selector);
+        dc.setPartner(address(dc), 100);
         vm.prank(stranger);
         vm.expectRevert();
         dc.setPartner(stranger, 5000);
@@ -925,5 +948,11 @@ contract DocumentaryCreditTest is Test {
         dc.reclaim(id);
         assertEq(usdc.balanceOf(importer), 1_000_000e6);
         assertEq(dc.owed(partner, usdc), 0);
+    }
+}
+
+contract WeirdPass {
+    function isActive(address, uint8) external pure returns (uint256) {
+        return 2;
     }
 }

@@ -84,4 +84,13 @@ contract CredocPassTest is Test {
         pass.setPrice(2, 0);
         vm.stopPrank();
     }
+
+    /// review 2026-10-13 (L-2): buying on top of a far-future grant reverts instead of wrapping to 1970
+    function test_buy_cannotWrapAGrant() public {
+        pass.grant(importer, 2, type(uint64).max);
+        vm.prank(importer);
+        vm.expectRevert(CredocPass.BadParams.selector);
+        pass.buy(importer, 2, 1);
+        assertTrue(pass.isActive(importer, 2));
+    }
 }

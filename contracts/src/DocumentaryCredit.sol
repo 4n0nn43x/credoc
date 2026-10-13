@@ -46,8 +46,9 @@ interface ICredocPass {
 /// Credoc earns a fee on each settled tranche, taken from the payee's proceeds; refunds are free. The rate is fixed
 /// per credit when it opens, so the owner can only change it for future credits, and never above MAX_FEE_BPS.
 /// Plans (CredocPass) lower it: an importer's plan for the credits it opens, a financier's plan for what it collects.
-/// A credit opened through a partner (white label) records that partner: a registered partner receives a share of
-/// Credoc's fee, and any integrator may add its own capped fee, both credited to `owed` and fixed at opening.
+/// A credit opened through a registered partner (white label) records it: the partner receives a share of Credoc's fee
+/// and may add its own capped fee, both credited to `owed` and fixed at opening. Only partners the owner registered
+/// qualify, and never the credit's own applicant or beneficiary, so an importer cannot skim the exporter.
 contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -295,10 +296,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         if (total > uint256(uint128(type(int128).max))) revert BadParams();
 
         if (p.applicantAgent != 0 && !_controlsAgent(msg.sender, p.applicantAgent - 1)) revert Unauthorized();
-        if (
-            p.integratorFeeBps > MAX_INTEGRATOR_FEE_BPS || (p.integratorFeeBps != 0 && p.partner == address(0))
-                || p.partner == address(this)
-        ) revert BadParams();
+        if (p.partner == address(0) ? p.integratorFeeBps != 0 : !_isPartnerFor(p, msg.sender)) revert BadParams();
 
         _credits[id] = Credit({
             applicant: msg.sender,
@@ -317,11 +315,11 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
             partnerShareBps: partnerShareBps[p.partner],
             integratorFeeBps: p.integratorFeeBps
         });
-        if (p.partner != address(0)) emit CreditPartner(id, p.partner, partnerShareBps[p.partner], p.integratorFeeBps);
 
         p.token.safeTransferFrom(msg.sender, address(this), total);
 
         emit CreditOpened(id, msg.sender, p.beneficiary, address(p.token), uint128(total), p.expiry, p.terms, ref);
+        if (p.partner != address(0)) emit CreditPartner(id, p.partner, partnerShareBps[p.partner], p.integratorFeeBps);
     }
 
     /// @notice Bind the caller's address to its ERC-8004 identity, so every credit where it is the beneficiary, open or
@@ -593,11 +591,18 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         emit PassChanged(address(p), bps);
     }
 
-    /// @notice Register a white-label partner, or change its share for credits opened from now on (0 unregisters).
+    /// @notice Register a white-label partner, or change its share for credits opened from now on (0 unregisters:
+    ///         a partner needs a share above zero to be named on new credits).
     function setPartner(address partner, uint16 shareBps) external onlyOwner {
-        if (partner == address(0) || shareBps > MAX_PARTNER_SHARE_BPS) revert BadParams();
+        if (partner == address(0) || partner == address(this) || shareBps > MAX_PARTNER_SHARE_BPS) revert BadParams();
         partnerShareBps[partner] = shareBps;
         emit PartnerSet(partner, shareBps);
+    }
+
+    /// @dev A registered partner, not a party to the credit, with a fee within the cap.
+    function _isPartnerFor(OpenParams calldata p, address applicant) internal view returns (bool) {
+        return partnerShareBps[p.partner] != 0 && p.partner != applicant && p.partner != p.beneficiary
+            && p.integratorFeeBps <= MAX_INTEGRATOR_FEE_BPS;
     }
 
     /// @dev True only if the plans contract answers "active"; any failure means no discount, never a blocked payment.
@@ -606,7 +611,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         if (gasleft() < PASS_GAS * 64 / 63 + 5_000) revert InsufficientGas();
         (bool ok, bytes memory ret) =
             address(pass).staticcall{gas: PASS_GAS}(abi.encodeCall(ICredocPass.isActive, (who, plan)));
-        return ok && ret.length == 32 && abi.decode(ret, (bool));
+        return ok && ret.length == 32 && uint256(bytes32(ret)) == 1; // a malformed answer must not revert settlement
     }
 
     /// @notice Send the collected fees of `token` to the treasury. Callable by anyone: the destination is fixed.

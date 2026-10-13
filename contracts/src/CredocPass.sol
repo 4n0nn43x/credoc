@@ -59,7 +59,9 @@ contract CredocPass is Ownable2Step {
         uint256 cost = quote(plan, periods);
         if (cost == 0) revert NotForSale();
         uint256 from = activeUntil[account][plan] > block.timestamp ? activeUntil[account][plan] : block.timestamp;
-        until = uint64(from + uint256(periods) * PERIOD);
+        uint256 end = from + uint256(periods) * PERIOD;
+        if (end > type(uint64).max) revert BadParams(); // a grant near the end of time must not wrap to 1970
+        until = uint64(end);
         activeUntil[account][plan] = until;
         usdc.safeTransferFrom(msg.sender, treasury, cost);
         emit PassBought(account, plan, until, msg.sender, cost);
