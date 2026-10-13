@@ -34,6 +34,7 @@ export function Attest() {
   const [file, setFile] = useState<Hashed | null>(null);
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<{ hash: Hex; seconds: number } | null>(null);
+  const [quota, setQuota] = useState(false); // the relayer's free monthly presentations are used up (HTTP 402)
   const t = now();
 
   const inbox: Item[] = [];
@@ -57,6 +58,7 @@ export function Attest() {
     setSel(keyOf(i));
     setFile(null);
     setLast(null);
+    setQuota(false);
   };
 
   const signAndRelay = async () => {
@@ -91,6 +93,9 @@ export function Attest() {
         setSel(null);
         setFile(null);
         await refresh();
+      } else if (res.status === 402) {
+        setQuota(true);
+        notify(title, "failed", "Your free relayed presentations for this month are used.");
       } else {
         const err = body.error ?? `relay failed (${res.status})`;
         notify(title, "failed", RELAY_ERRORS[err] ?? contractErrorMessage(err) ?? err);
@@ -209,6 +214,14 @@ export function Attest() {
                       <i className="ti ti-signature me-1" /> Sign (no fee)
                     </SignButton>
                     <FeeNote free />
+                    {quota && (
+                      <div className="alert alert-warning fs-13 mb-0" role="alert">
+                        <div className="fw-semibold mb-1">Free relays used for this month</div>
+                        Without a plan, the relayer pays for 5 presentations per 30 days. To keep signing for free,{" "}
+                        <Link to="/plans" className="link-dark fw-medium">buy an attestor plan</Link> or ask the importer to sponsor one for your
+                        address. Or present this document now from your own wallet with "Present directly" below (about 0.01 USDC).
+                      </div>
+                    )}
                     {address && (
                       <button type="button" className="btn btn-link btn-sm text-muted" onClick={() => void presentDirect()} disabled={busy}>
                         Present directly (you pay ~0.01 USDC)

@@ -28,6 +28,11 @@ interface IReputationRegistry {
     ) external;
 }
 
+/// @dev CredocPass, the prepaid plans that lower the settlement fee.
+interface ICredocPass {
+    function isActive(address account, uint8 plan) external view returns (bool);
+}
+
 /// @title DocumentaryCredit
 /// @notice Cash-backed letters of credit for small importers, settled in USDC or EURC on Arc.
 ///
@@ -40,6 +45,10 @@ interface IReputationRegistry {
 /// writes an ERC-8004 reputation entry that only a real settlement through this contract can produce.
 /// Credoc earns a fee on each settled tranche, taken from the payee's proceeds; refunds are free. The rate is fixed
 /// per credit when it opens, so the owner can only change it for future credits, and never above MAX_FEE_BPS.
+/// Plans (CredocPass) lower it: an importer's plan for the credits it opens, a financier's plan for what it collects.
+/// A credit opened through a registered partner (white label) records it: the partner receives a share of Credoc's fee
+/// and may add its own capped fee, both credited to `owed` and fixed at opening. Only partners the owner registered
+/// qualify, and never the credit's own applicant or beneficiary, so an importer cannot skim the exporter.
 contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -49,6 +58,12 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     uint256 public constant MAX_TRANCHES = 8;
     uint256 public constant MAX_TENOR = 730 days;
     uint16 public constant MAX_FEE_BPS = 100; // 1%, hard cap on the settlement fee
+    uint16 public constant MAX_PARTNER_SHARE_BPS = 5000; // a partner gets at most half of Credoc's fee
+    uint16 public constant MAX_INTEGRATOR_FEE_BPS = 50; // 0.5% on top, so a customer never pays more than 1.5%
+    uint8 public constant IMPORTER_PLAN = 2; // CredocPass plan ids
+    uint8 public constant FINANCIER_PLAN = 3;
+    /// @dev gas for a plan lookup: reserved like FEEDBACK_GAS, so nobody can drop a discount by starving the call
+    uint256 public constant PASS_GAS = 30_000;
 
     bytes32 public constant PRESENTATION_TYPEHASH =
         keccak256("Presentation(uint256 creditId,uint8 tranche,uint8 doc,bytes32 docHash,uint256 deadline)");
@@ -97,6 +112,9 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         uint256 applicantAgent; // ERC-8004 agentId + 1, 0 = none
         uint256 beneficiaryAgent; // never stored: getCredit fills it from agentOf[beneficiary]
         bytes32 terms; // hash of the off-chain contract (proforma invoice, incoterms...)
+        address partner; // white-label partner or integrator the credit was opened through, 0 = none
+        uint16 partnerShareBps; // its share of Credoc's fee, fixed at opening
+        uint16 integratorFeeBps; // its own fee on top, fixed at opening
     }
 
     struct OpenParams {
@@ -107,6 +125,8 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         uint256 applicantAgent; // agentId + 1, 0 = none
         DocRequirement[] docs;
         TrancheSpec[] tranches;
+        address partner; // 0 = none
+        uint16 integratorFeeBps; // needs a partner to receive it
     }
 
     struct Offer {
@@ -155,6 +175,11 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     /// @dev settlement fees collected per token, not yet sent to the treasury
     mapping(IERC20 => uint256) public fees;
 
+    ICredocPass public pass;
+    uint16 public proFeeBps; // fee for plan holders, never above the credit's own rate
+    /// @dev registered white-label partners and their share of Credoc's fee (0 = not registered)
+    mapping(address => uint16) public partnerShareBps;
+
     // ------------------------------------------------------------------ events
 
     event CreditOpened(
@@ -191,6 +216,10 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     event FeeChanged(uint16 feeBps);
     event TreasuryChanged(address treasury);
     event FeesWithdrawn(address indexed token, uint256 amount);
+    event PassChanged(address pass, uint16 proFeeBps);
+    event PartnerSet(address indexed partner, uint16 shareBps);
+    event CreditPartner(uint256 indexed creditId, address indexed partner, uint16 shareBps, uint16 integratorFeeBps);
+    event PartnerFeeAccrued(uint256 indexed creditId, uint8 indexed tranche, address indexed partner, uint128 amount);
 
     // ------------------------------------------------------------------ errors
 
@@ -267,6 +296,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         if (total > uint256(uint128(type(int128).max))) revert BadParams();
 
         if (p.applicantAgent != 0 && !_controlsAgent(msg.sender, p.applicantAgent - 1)) revert Unauthorized();
+        if (p.partner == address(0) ? p.integratorFeeBps != 0 : !_isPartnerFor(p, msg.sender)) revert BadParams();
 
         _credits[id] = Credit({
             applicant: msg.sender,
@@ -275,17 +305,21 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
             token: p.token,
             expiry: p.expiry,
             status: Status.Active,
-            feeBps: feeBps,
+            feeBps: proFeeBps < feeBps && _hasPass(msg.sender, IMPORTER_PLAN) ? proFeeBps : feeBps,
             total: uint128(total),
             outstanding: uint128(total),
             applicantAgent: p.applicantAgent,
             beneficiaryAgent: 0,
-            terms: p.terms
+            terms: p.terms,
+            partner: p.partner,
+            partnerShareBps: partnerShareBps[p.partner],
+            integratorFeeBps: p.integratorFeeBps
         });
 
         p.token.safeTransferFrom(msg.sender, address(this), total);
 
         emit CreditOpened(id, msg.sender, p.beneficiary, address(p.token), uint128(total), p.expiry, p.terms, ref);
+        if (p.partner != address(0)) emit CreditPartner(id, p.partner, partnerShareBps[p.partner], p.integratorFeeBps);
     }
 
     /// @notice Bind the caller's address to its ERC-8004 identity, so every credit where it is the beneficiary, open or
@@ -361,10 +395,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         bool last = c.outstanding == 0;
         if (last) c.status = Status.Closed;
 
-        uint128 fee = uint128(uint256(t.amount) * c.feeBps / 10_000);
-        fees[c.token] += fee;
-        _pay(c.token, payee, t.amount - fee);
-        emit TrancheSettled(id, tranche, payee, t.amount, fee);
+        _settleFees(id, c, tranche, t.amount, payee);
 
         // a tranche settled through waivers is recorded apart: the applicant alone can produce it
         string memory outcome = t.waivedDocs == 0 ? "delivered" : "waived";
@@ -375,6 +406,23 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         _feedback(id, tranche, c.applicantAgent, int128(t.amount), 6, vTag, t.amount);
 
         if (last) emit CreditClosed(id, true);
+    }
+
+    /// @dev Splits a settled tranche: Credoc's fee (less a plan discount for a financier payee) minus the partner's
+    ///      share goes to `fees`, the share plus the integrator fee to the partner's `owed`, the rest to the payee.
+    function _settleFees(uint256 id, Credit storage c, uint8 tranche, uint128 amount, address payee) internal {
+        uint256 rate = c.feeBps;
+        if (proFeeBps < rate && _hasPass(payee, FINANCIER_PLAN)) rate = proFeeBps;
+        uint128 fee = uint128(uint256(amount) * rate / 10_000);
+        uint128 integ = uint128(uint256(amount) * c.integratorFeeBps / 10_000);
+        uint128 share = uint128(uint256(fee) * c.partnerShareBps / 10_000);
+        fees[c.token] += fee - share;
+        if (share + integ != 0) {
+            owed[c.partner][c.token] += share + integ;
+            emit PartnerFeeAccrued(id, tranche, c.partner, share + integ);
+        }
+        _pay(c.token, payee, amount - fee - integ);
+        emit TrancheSettled(id, tranche, payee, amount, fee + integ);
     }
 
     // ------------------------------------------------------------------ expiry, amendment, cancellation
@@ -533,6 +581,37 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         if (to == address(0)) revert BadParams();
         treasury = to;
         emit TreasuryChanged(to);
+    }
+
+    /// @notice Plans contract and the fee its holders pay (0 address turns discounts off).
+    function setPass(ICredocPass p, uint16 bps) external onlyOwner {
+        if (bps > MAX_FEE_BPS) revert BadParams();
+        pass = p;
+        proFeeBps = bps;
+        emit PassChanged(address(p), bps);
+    }
+
+    /// @notice Register a white-label partner, or change its share for credits opened from now on (0 unregisters:
+    ///         a partner needs a share above zero to be named on new credits).
+    function setPartner(address partner, uint16 shareBps) external onlyOwner {
+        if (partner == address(0) || partner == address(this) || shareBps > MAX_PARTNER_SHARE_BPS) revert BadParams();
+        partnerShareBps[partner] = shareBps;
+        emit PartnerSet(partner, shareBps);
+    }
+
+    /// @dev A registered partner, not a party to the credit, with a fee within the cap.
+    function _isPartnerFor(OpenParams calldata p, address applicant) internal view returns (bool) {
+        return partnerShareBps[p.partner] != 0 && p.partner != applicant && p.partner != p.beneficiary
+            && p.integratorFeeBps <= MAX_INTEGRATOR_FEE_BPS;
+    }
+
+    /// @dev True only if the plans contract answers "active"; any failure means no discount, never a blocked payment.
+    function _hasPass(address who, uint8 plan) internal view returns (bool) {
+        if (address(pass) == address(0)) return false;
+        if (gasleft() < PASS_GAS * 64 / 63 + 5_000) revert InsufficientGas();
+        (bool ok, bytes memory ret) =
+            address(pass).staticcall{gas: PASS_GAS}(abi.encodeCall(ICredocPass.isActive, (who, plan)));
+        return ok && ret.length == 32 && uint256(bytes32(ret)) == 1; // a malformed answer must not revert settlement
     }
 
     /// @notice Send the collected fees of `token` to the treasury. Callable by anyone: the destination is fixed.

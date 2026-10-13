@@ -4,8 +4,9 @@ pragma solidity 0.8.30;
 import {Test, Vm} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {DocumentaryCredit, IIdentityRegistry, IReputationRegistry} from "../src/DocumentaryCredit.sol";
+import {DocumentaryCredit, ICredocPass, IIdentityRegistry, IReputationRegistry} from "../src/DocumentaryCredit.sol";
 import {MockToken, MockRegistries} from "./Mocks.sol";
+import {CredocPass} from "../src/CredocPass.sol";
 
 /// @dev minimal ERC-1271 smart wallet, to prove contract-wallet attestors work
 contract Wallet1271 {
@@ -814,5 +815,144 @@ contract DocumentaryCreditTest is Test {
         vm.prank(exporter);
         vm.expectRevert(DocumentaryCredit.StaleOffer.selector);
         dc.acceptOffer(off);
+    }
+
+    // ------------------------------------------------------------ plans and partners
+
+    function _pass() internal returns (CredocPass ps) {
+        ps = new CredocPass(usdc, address(this), [uint96(49e6), 99e6, 299e6]);
+        dc.setFee(25);
+        dc.setPass(ICredocPass(address(ps)), 10);
+    }
+
+    function test_plan_importerOpensAtProRate() public {
+        CredocPass ps = _pass();
+        ps.grant(importer, 2, uint64(block.timestamp + 30 days));
+        uint256 id = _open(1000e6, 0);
+        assertEq(dc.getCredit(id).feeBps, 10);
+        ps.grant(importer, 2, 0); // the rate stays the one the credit opened with
+        _presentBoth(id, 0);
+        assertEq(usdc.balanceOf(exporter), 1000e6 - 1e6);
+        uint256 id2 = _open(1000e6, 0);
+        assertEq(dc.getCredit(id2).feeBps, 25, "no plan, standard rate");
+    }
+
+    function test_plan_financierCollectsAtProRate() public {
+        CredocPass ps = _pass();
+        uint256 id = _open(1000e6, 0);
+        vm.prank(financier);
+        uint256 off = dc.makeOffer(id, 900e6, uint64(block.timestamp + 1 days));
+        vm.prank(exporter);
+        dc.acceptOffer(off);
+        ps.grant(financier, 3, uint64(block.timestamp + 30 days));
+        uint256 before = usdc.balanceOf(financier);
+        _presentBoth(id, 0);
+        assertEq(usdc.balanceOf(financier) - before, 1000e6 - 1e6);
+    }
+
+    /// review 2026-10-13 (I-1): a pass answering a non-boolean word gives no discount and blocks nothing
+    function test_plan_malformedAnswerNeverBlocks() public {
+        dc.setFee(25);
+        dc.setPass(ICredocPass(address(new WeirdPass())), 10);
+        uint256 id = _open(1000e6, 0);
+        assertEq(dc.getCredit(id).feeBps, 25);
+        _presentBoth(id, 0);
+        assertEq(usdc.balanceOf(exporter), 1000e6 - 2.5e6);
+    }
+
+    function test_plan_brokenPassNeverBlocksSettlement() public {
+        dc.setFee(25);
+        dc.setPass(ICredocPass(address(reg)), 10); // has no isActive: every lookup fails, standard rate applies
+        uint256 id = _open(1000e6, 0);
+        assertEq(dc.getCredit(id).feeBps, 25);
+        _presentBoth(id, 0);
+        assertEq(usdc.balanceOf(exporter), 1000e6 - 2.5e6);
+        vm.expectRevert(DocumentaryCredit.BadParams.selector);
+        dc.setPass(ICredocPass(address(reg)), 101);
+    }
+
+    function _openVia(address partner, uint16 integ, uint128 a) internal returns (uint256) {
+        DocumentaryCredit.OpenParams memory p = _params(a, 0);
+        p.partner = partner;
+        p.integratorFeeBps = integ;
+        vm.prank(importer);
+        return dc.open(p, "");
+    }
+
+    function test_partner_shareAndIntegratorFee() public {
+        address partner = makeAddr("partner");
+        dc.setFee(25);
+        dc.setPartner(partner, 2500); // a quarter of Credoc's fee
+        uint256 id = _openVia(partner, 50, 10_000e6);
+        dc.setPartner(partner, 5000); // later changes never reach an open credit
+        _presentBoth(id, 0);
+        // fee 25 USDC, of which 6.25 to the partner; integrator fee 50 USDC; exporter gets the rest
+        assertEq(usdc.balanceOf(exporter), 10_000e6 - 25e6 - 50e6);
+        assertEq(dc.fees(usdc), 18.75e6);
+        assertEq(dc.owed(partner, usdc), 6.25e6 + 50e6);
+        vm.prank(partner);
+        dc.withdrawOwed(usdc);
+        assertEq(usdc.balanceOf(partner), 56.25e6);
+        assertEq(usdc.balanceOf(address(dc)), 18.75e6);
+    }
+
+    /// review 2026-10-13 (M-1, L-1): only owner-registered partners qualify, never a party to the credit, so an
+    /// importer cannot name itself (or any address) to skim the exporter or cut Credoc's fee
+    function test_partner_onlyRegisteredAndNeverAParty() public {
+        DocumentaryCredit.OpenParams memory p = _params(1000e6, 0);
+        p.partner = makeAddr("integrator"); // not registered
+        p.integratorFeeBps = 20;
+        _expectBad(p);
+        p.integratorFeeBps = 0;
+        _expectBad(p);
+        dc.setPartner(importer, 2500);
+        dc.setPartner(exporter, 2500);
+        p.partner = importer;
+        _expectBad(p);
+        p.partner = exporter;
+        _expectBad(p);
+        dc.setPartner(makeAddr("integrator"), 0); // a zero share unregisters
+        p.partner = makeAddr("integrator");
+        _expectBad(p);
+    }
+
+    function test_partner_capsAndRules() public {
+        address partner = makeAddr("partner");
+        DocumentaryCredit.OpenParams memory p = _params(1000e6, 0);
+        p.partner = partner;
+        p.integratorFeeBps = 51;
+        _expectBad(p);
+        p.partner = address(0);
+        p.integratorFeeBps = 10; // a fee needs someone to receive it
+        _expectBad(p);
+        p.partner = address(dc);
+        p.integratorFeeBps = 0;
+        _expectBad(p);
+        vm.expectRevert(DocumentaryCredit.BadParams.selector);
+        dc.setPartner(partner, 5001);
+        vm.expectRevert(DocumentaryCredit.BadParams.selector);
+        dc.setPartner(address(0), 100);
+        vm.expectRevert(DocumentaryCredit.BadParams.selector);
+        dc.setPartner(address(dc), 100);
+        vm.prank(stranger);
+        vm.expectRevert();
+        dc.setPartner(stranger, 5000);
+    }
+
+    function test_partner_refundsAreFree() public {
+        address partner = makeAddr("partner");
+        dc.setFee(25);
+        dc.setPartner(partner, 2500);
+        uint256 id = _openVia(partner, 50, 1000e6);
+        vm.warp(expiry + 1);
+        dc.reclaim(id);
+        assertEq(usdc.balanceOf(importer), 1_000_000e6);
+        assertEq(dc.owed(partner, usdc), 0);
+    }
+}
+
+contract WeirdPass {
+    function isActive(address, uint8) external pure returns (uint256) {
+        return 2;
     }
 }

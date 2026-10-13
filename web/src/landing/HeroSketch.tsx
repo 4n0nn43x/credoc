@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { onThemeChange } from "../shared/theme";
 
 /**
  * Hero background, drawn in pencil on a canvas: Credoc as a seamless cycle.
@@ -14,7 +15,14 @@ import { useEffect, useRef } from "react";
 type P = { x: number; y: number };
 type Seg = [P, P];
 
-const INK = "34, 32, 30";
+// pencil and paper follow the theme; read on every frame, so a switch shows at once
+const dark = () => document.documentElement.classList.contains("dark");
+let INK = "34, 32, 30";
+let PAPER = "255,255,255";
+const syncTheme = () => {
+  INK = dark() ? "232, 230, 226" : "34, 32, 30";
+  PAPER = dark() ? "20,20,19" : "255,255,255";
+};
 const BLUE = "86, 98, 214";
 const INTRO = 1.6; // first load only: desk, coins, clouds and the first document are sketched in
 const CYCLE = 8.6; // seconds; state(0) === state(CYCLE)
@@ -336,7 +344,7 @@ function render(ctx: CanvasRenderingContext2D, Lt: Layout, t: number, intro: num
       ctx.rect(0, 0, Lt.w, envTop + 1);
       ctx.clip();
     }
-    ctx.fillStyle = `rgba(255,255,255,${0.92 * clamp(docDraw * 3)})`;
+    ctx.fillStyle = `rgba(${PAPER},${0.92 * clamp(docDraw * 3)})`;
     ctx.fillRect(x0, y0, dw, dh);
     const f = 0.3;
     sketch(ctx, [at(0, 0), at(1 - f, 0), at(1, f * 0.78), at(1, 1), at(0, 1), at(0, 0)], { seed: 21, jitter: j, width: 1.8, alpha: 0.85, passes: 3 }, clamp(docDraw / 0.45));
@@ -370,7 +378,7 @@ function render(ctx: CanvasRenderingContext2D, Lt: Layout, t: number, intro: num
       env[5] = [A, env[5]![1]];
       const k = 1 - 0.35 * fold;
       const shrink = (p: P): P => ({ x: envC.x + (p.x - envC.x) * k, y: envC.y + (p.y - envC.y) * k });
-      ctx.fillStyle = `rgba(255,255,255,${0.9 * (1 - fold)})`; // paper: the desk does not show through
+      ctx.fillStyle = `rgba(${PAPER},${0.9 * (1 - fold)})`; // paper: the desk does not show through
       ctx.fillRect(envC.x - S * 0.45 * k, envC.y - S * 0.275 * k, S * 0.9 * k, S * 0.55 * k);
       drawSegs(env.map(([a, b]) => [shrink(a), shrink(b)] as Seg), 1 - fold, (i) => clamp(envDraw * 8 - i * 0.8));
       if (fold > 0) drawSegs(planeSegs(envC, S * 0.9, takeoff), fold, () => 1);
@@ -398,7 +406,7 @@ function render(ctx: CanvasRenderingContext2D, Lt: Layout, t: number, intro: num
   const bw = S * 0.32;
   const bh = S * 0.26;
   if (lockFade > 0 && lockDraw > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${0.95 * lockFade * clamp(lockDraw * 3)})`;
+    ctx.fillStyle = `rgba(${PAPER},${0.95 * lockFade * clamp(lockDraw * 3)})`;
     ctx.fillRect(lc.x - bw / 2, lc.y - bh / 2, bw, bh);
     sketch(
       ctx,
@@ -442,7 +450,7 @@ function render(ctx: CanvasRenderingContext2D, Lt: Layout, t: number, intro: num
     const r = S * 0.065;
     const fade = clamp((t - C.coin[0]) / 0.15) * (1 - clamp((t - C.coin[1]) / 0.3));
     const spin = coinU * Math.PI * 9; // rolling: the hatches turn with the distance
-    ctx.fillStyle = `rgba(255,255,255,${0.95 * fade})`;
+    ctx.fillStyle = `rgba(${PAPER},${0.95 * fade})`;
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
     ctx.fill();
@@ -516,6 +524,11 @@ export function HeroSketch() {
       );
       if (still !== null) render(ctx, lay, still, 1); // resizing clears the canvas: redraw the still frame
     };
+    syncTheme();
+    const offTheme = onThemeChange(() => {
+      syncTheme();
+      if (still !== null && lay) render(ctx, lay, still, 1);
+    });
 
     // the scenery is sketched in once; after that the cycle repeats with no seam
     const frame = (now: number) => {
@@ -552,7 +565,10 @@ export function HeroSketch() {
       const q = new URLSearchParams(location.search).get("heroAt");
       if (q !== null) {
         at(Number(q));
-        return () => ro.disconnect();
+        return () => {
+          offTheme();
+          ro.disconnect();
+        };
       }
     }
     let onScreen = true;
@@ -567,6 +583,7 @@ export function HeroSketch() {
     play();
 
     return () => {
+      offTheme();
       pause();
       ro.disconnect();
       io.disconnect();

@@ -6,10 +6,33 @@ html {
   scroll-behavior: smooth;
 }
 
+:root {
+  --ink: 25 25 25;
+  --ink-2: 55 65 81;
+  --paper: 255 255 255;
+  --wash: 244 243 243;
+  --wash-2: 234 234 234;
+  --line: 229 231 235;
+  --line-2: 209 213 219;
+  --muted: 156 163 175;
+}
+/* dark: warm near-black paper and off-white ink, so the pencil drawings keep their feel */
+html.dark {
+  --ink: 236 235 232;
+  --ink-2: 200 198 194;
+  --paper: 20 20 19;
+  --wash: 30 29 28;
+  --wash-2: 40 39 37;
+  --line: 46 45 43;
+  --line-2: 64 62 60;
+  --muted: 128 125 120;
+}
+
 body {
   margin: 0;
-  background: #ffffff;
-  color: #191919;
+  background: rgb(var(--paper));
+  color: rgb(var(--ink));
+  transition: background-color 200ms ease, color 200ms ease;
   font-family: Inter, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

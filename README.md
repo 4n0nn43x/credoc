@@ -39,7 +39,19 @@ Credoc takes **0.25% of each settled tranche**, deducted from the payee's procee
 
 - The rate is fixed when a credit opens. The owner can change it for future credits only, and never above the 1% hard cap (`MAX_FEE_BPS`).
 - Fees accrue in the contract per token and go to the treasury address through `withdrawFees`, which anyone can call.
-- Next: subscriptions for attestors (multi-client dashboard, API, batch signing), importers (templates, teams, accounting export) and financiers (receivables feed, pricing API), then white-label licences for fintechs and banks.
+
+**Plans** (`CredocPass`, prepaid in USDC by periods of 30 days, a year of 12 periods costs 10, paid straight to the treasury; anyone can pay for anyone, so an importer can sponsor its forwarder):
+
+| Plan | Price / 30 days | What the contracts and the relayer enforce |
+|---|---|---|
+| Attestor | 49 USDC | Unlimited gasless presentations through the relayer. Without a plan: 5 free relays per 30 days, then HTTP 402 (direct submission always works) |
+| Importer | 99 USDC | 0.10% instead of 0.25% on credits opened while active, and relays for all its attestors |
+| Financier | 299 USDC | 0.10% on proceeds collected while active |
+
+The verified-attestor badge is separate: granted by the owner after a business verification, never sold with a plan.
+Plan lookups are gas-capped static calls: a broken or malicious pass can only remove a discount, never block a payment.
+
+**Partners and white label**: the owner registers a partner with a share of Credoc's fee (at most 50%). Credits opened through it record the partner, its share and its own optional fee on top (at most 0.5%), all fixed at opening and paid to the partner's `owed` balance. A partner can never be the credit's applicant or beneficiary, so nobody can skim the exporter by naming themselves. At most a customer pays 0.25% + 0.5% = 0.75%.
 
 ## Why Arc
 
@@ -64,7 +76,7 @@ web/         Landing page and dashboard (Vite, React), gasless relayer (serverle
 
 ```bash
 cd contracts && npm install
-forge test                      # unit (38, incl. fuzz) + invariant (2) tests; fork tests skip outside Arc
+forge test                      # unit and fuzz (52) + invariant (2) tests; fork tests skip outside Arc
 ```
 
 Fork tests run against real Arc mainnet state (native USDC, EURC, ERC-8004, Memo, Multicall3From). They need [Arc Foundry](https://docs.arc.io/arc/tutorials/install-arc-foundry), because stock Foundry cannot execute Arc's USDC precompile:
@@ -108,6 +120,13 @@ npm run dev     # http://localhost:5173 and /app/
 credoc.xyz runs on a single server behind a shared Caddy (TLS, security headers, CSP). The image (`Dockerfile`) is a
 distroless Node runtime serving the built site and the relayer, run read-only, non-root and without capabilities
 (`deploy/compose.yaml`). The relayer key lives only in the server's `.env`.
+
+White-label partners use their own domain. `web/partners.json` (versioned, bundled into the server at build time) maps
+each host to a brand: `{ "name", "partner", "integratorFeeBps", "supportUrl" }`. The server answers `GET /brand.json`
+for the request's host (unknown hosts and invalid entries get the plain Credoc brand), and the dashboard opens credits
+with that partner and fee, once the partner is registered on the contract. A partner points its domain (CNAME or A
+record) at the server; Caddy issues the certificate with `on_demand_tls`, whose `ask` endpoint must only allow hosts
+listed in `partners.json`, so nobody can make the server request certificates for arbitrary names.
 
 Every pull request to `main` runs the gates in `.github/workflows/ci.yml`:
 
@@ -154,7 +173,7 @@ The deployment uses about 4.3M gas, roughly 0.09 to 0.17 USDC.
 
 ## Security review
 
-An independent review found one high, two medium and four low issues ([report](docs/security-review.md), written against the first version). All are fixed and each has a regression test (`test_review_*`). The exploit proofs of concept from the review fail against the current contract. A second pass before the mainnet deployment found two more ways to keep failures out of a track record and two ways to turn an offer against its financier; all four are fixed (`test_audit_*`, same report).
+An independent review found one high, two medium and four low issues ([report](docs/security-review.md), written against the first version). All are fixed and each has a regression test (`test_review_*`). The exploit proofs of concept from the review fail against the current contract. A second pass before the mainnet deployment found two more ways to keep failures out of a track record and two ways to turn an offer against its financier; all four are fixed (`test_audit_*`, same report). A third pass on plans and partners found a self-dealing partner fee and two edge cases, fixed with regression tests (same report).
 
 ## License
 

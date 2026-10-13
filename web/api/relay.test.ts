@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { relayPresentation } from "./_relay-core.ts";
+import { FREE_RELAYS, freeQuota, relayPresentation } from "./_relay-core.ts";
 
 const env = {
   rpcUrl: "http://127.0.0.1:1", // unreachable on purpose: these cases must be rejected before any network call
@@ -40,4 +40,14 @@ test("rejects malformed presentations before touching the network", async () => 
 test("a well-formed request reaches the chain (and fails cleanly when it is unreachable)", async () => {
   const r = await relayPresentation(good, env);
   assert.equal(r.status, 502);
+});
+
+test("the free relay quota allows FREE_RELAYS per attestor per 30 days, then refills", () => {
+  const who = "0x00000000000000000000000000000000000000aA";
+  const t0 = 1_800_000_000_000;
+  assert.equal(freeQuota.left(who, t0), FREE_RELAYS);
+  for (let i = 0; i < FREE_RELAYS; i++) freeQuota.take(who.toUpperCase().replace("0X", "0x"), t0 + i);
+  assert.equal(freeQuota.left(who, t0 + 10), 0, "case-insensitive per attestor");
+  assert.equal(freeQuota.left("0x00000000000000000000000000000000000000bb", t0), FREE_RELAYS);
+  assert.equal(freeQuota.left(who, t0 + 31 * 86_400_000), FREE_RELAYS, "a month later");
 });

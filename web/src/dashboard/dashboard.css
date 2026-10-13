@@ -70,3 +70,56 @@ html[data-sidenav-size="condensed"] .credoc-sidenav-note .note-text { display: n
 /* the sidebar body fills the space under the logo, so the funds note sits at its very bottom */
 .sidenav-menu { display: flex; flex-direction: column; }
 .credoc-sidenav-body { flex: 1 1 auto; min-height: 0; }
+
+/* theme switch in the topbar (shared sun / moon drawing) */
+.credoc-theme-btn { color: var(--osen-topbar-item-color, #57534e); border-radius: 8px; }
+.credoc-theme-btn:hover { color: var(--credoc-ink); background: var(--credoc-paper) !important; }
+
+/* Dark theme: Osen's dark mode, retuned from its blue-grays to Credoc's warm near-blacks so the dashboard matches
+   the landing page. Ink and paper swap: what was ink on paper becomes paper-coloured ink on dark paper. */
+:root[data-bs-theme=dark] {
+  --credoc-ink: #ecebe8;
+  --credoc-paper: #232220;
+  --osen-body-bg: #141413; --osen-body-bg-rgb: 20, 20, 19;
+  --osen-body-color: #c9c6c1; --osen-body-color-rgb: 201, 198, 193;
+  --osen-emphasis-color: #ecebe8; --osen-emphasis-color-rgb: 236, 235, 232;
+  --osen-heading-color: #ecebe8;
+  --osen-secondary-color: #9a968f; --osen-secondary-color-rgb: 154, 150, 143;
+  --osen-secondary-bg: #1b1a19; --osen-secondary-bg-rgb: 27, 26, 25;
+  --osen-tertiary-bg: #232220; --osen-tertiary-bg-rgb: 35, 34, 32;
+  --osen-light: #232220; --osen-light-rgb: 35, 34, 32;
+  --osen-dark: #ecebe8; --osen-dark-rgb: 236, 235, 232;
+  --osen-border-color: #2e2d2b; --osen-border-color-translucent: rgba(236, 235, 232, 0.1);
+  --osen-link-color: #ecebe8; --osen-link-hover-color: #ffffff;
+  --osen-box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+}
+:root[data-bs-theme=dark][data-menu-color=light] {
+  --osen-menu-bg: #1b1a19; --osen-menu-item-color: #9a968f; --osen-menu-item-hover-color: #ecebe8;
+  --osen-menu-item-hover-bg: rgba(236, 235, 232, 0.08); --osen-menu-item-active-color: #ecebe8; --osen-menu-item-active-bg: rgba(236, 235, 232, 0.1);
+}
+:root[data-bs-theme=dark][data-topbar-color=light] {
+  --osen-topbar-bg: #1b1a19; --osen-topbar-item-color: #9a968f; --osen-topbar-item-hover-color: #ecebe8;
+  --osen-topbar-search-bg: #232220; --osen-topbar-user-bg: #232220; --osen-topbar-user-border: #2e2d2b;
+}
+[data-bs-theme=dark] .btn-primary, [data-bs-theme=dark] .btn-dark {
+  --osen-btn-color: #141413; --osen-btn-bg: #ecebe8; --osen-btn-border-color: #ecebe8;
+  --osen-btn-hover-color: #141413; --osen-btn-hover-bg: #ffffff; --osen-btn-hover-border-color: #ffffff;
+  --osen-btn-active-color: #141413; --osen-btn-active-bg: #d6d3d1; --osen-btn-disabled-color: #141413; --osen-btn-disabled-bg: #9a968f;
+}
+[data-bs-theme=dark] .btn-outline-dark {
+  --osen-btn-color: #ecebe8; --osen-btn-border-color: #4a4845; --osen-btn-hover-color: #141413; --osen-btn-hover-bg: #ecebe8; --osen-btn-hover-border-color: #ecebe8;
+  --osen-btn-disabled-color: #9a968f; --osen-btn-disabled-border-color: #4a4845;
+}
+[data-bs-theme=dark] .badge.bg-dark { background-color: #ecebe8 !important; color: #141413; }
+[data-bs-theme=dark] .micro-label { color: rgba(236, 235, 232, 0.5); }
+[data-bs-theme=dark] .amount .cents, [data-bs-theme=dark] .amount .ccy { color: rgba(236, 235, 232, 0.45); }
+[data-bs-theme=dark] .empty-state .ti { color: rgba(236, 235, 232, 0.35); }
+[data-bs-theme=dark] .badge-soft.tone-success { background: rgba(77, 175, 115, 0.15); color: #8fd1a8; }
+[data-bs-theme=dark] .badge-soft.tone-info { background: rgba(110, 140, 190, 0.18); color: #a9bfe0; }
+[data-bs-theme=dark] .badge-soft.tone-warning { background: rgba(214, 160, 70, 0.16); color: #e3bd7a; }
+[data-bs-theme=dark] .badge-soft.tone-secondary { background: rgba(168, 162, 158, 0.15); color: #c9c6c1; }
+[data-bs-theme=dark] .badge-soft.tone-dark { background: rgba(236, 235, 232, 0.1); color: #ecebe8; }
+[data-bs-theme=dark] .credoc-kbd { background: #232220; color: #c9c6c1; }
+[data-bs-theme=dark] .credoc-toast { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+[data-bs-theme=dark] .credoc-palette .modal-content { box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); }
+[data-bs-theme=dark] .modal-backdrop { --osen-backdrop-bg: #000; --osen-backdrop-opacity: 0.6; }

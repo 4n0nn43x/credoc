@@ -3,7 +3,8 @@ pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {DocumentaryCredit, IIdentityRegistry, IReputationRegistry} from "../src/DocumentaryCredit.sol";
+import {DocumentaryCredit, ICredocPass, IIdentityRegistry, IReputationRegistry} from "../src/DocumentaryCredit.sol";
+import {CredocPass} from "../src/CredocPass.sol";
 import {MockToken, MockRegistries} from "./Mocks.sol";
 
 /// @dev Drives random sequences of every state-changing entry point.
@@ -49,6 +50,11 @@ contract Handler is Test {
         p.tranches = new DocumentaryCredit.TrancheSpec[](2);
         p.tranches[0] = DocumentaryCredit.TrancheSpec(uint128(bound(x, 1, 1e15)), uint8(1 + masks % 3));
         p.tranches[1] = DocumentaryCredit.TrancheSpec(uint128(bound(y, 1, 1e15)), uint8(1 + (masks / 3) % 3));
+        // half the credits come through the registered partner, with an integrator fee
+        if (masks % 2 == 0) {
+            p.partner = partner;
+            p.integratorFeeBps = 50;
+        }
         vm.prank(app);
         creditIds.push(dc.open(p, ""));
     }
@@ -127,6 +133,20 @@ contract Handler is Test {
 
     // ---- ghost accounting read by the invariant
 
+    address public partner = makeAddr("partner");
+
+    /// plans come and go at any time: discounts must never break solvency
+    function togglePlan(uint256 a, uint8 plan, bool on) external {
+        CredocPass ps = CredocPass(address(dc.pass()));
+        vm.prank(ps.owner());
+        ps.grant(_actor(a), uint8(2 + plan % 2), on ? uint64(block.timestamp + 30 days) : 0);
+    }
+
+    function withdrawPartner() external {
+        vm.prank(partner);
+        try dc.withdrawOwed(usdc) {} catch {}
+    }
+
     function liabilities() external view returns (uint256 sum) {
         for (uint256 i; i < creditIds.length; i++) {
             DocumentaryCredit.Credit memory c = dc.getCredit(creditIds[i]);
@@ -140,6 +160,7 @@ contract Handler is Test {
             sum += dc.owed(actors[i], usdc);
         }
         sum += dc.fees(usdc);
+        sum += dc.owed(partner, usdc);
     }
 
     function creditCount() external view returns (uint256) {
@@ -164,6 +185,9 @@ contract InvariantTest is Test {
         toks[0] = usdc;
         dc = new DocumentaryCredit(toks, IIdentityRegistry(address(reg)), IReputationRegistry(address(reg)), makeAddr("treasury"), 25);
         h = new Handler(dc, usdc);
+        CredocPass ps = new CredocPass(usdc, makeAddr("treasury"), [uint96(49e6), 99e6, 299e6]);
+        dc.setPass(ICredocPass(address(ps)), 10);
+        dc.setPartner(h.partner(), 2500);
         targetContract(address(h));
     }
 

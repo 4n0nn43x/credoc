@@ -13,6 +13,7 @@ import { Market } from "./pages/Market";
 import { Identity } from "./pages/Identity";
 import { Activity } from "./pages/Activity";
 import { Login } from "./pages/Login";
+import { Plans } from "./pages/Plans";
 import { useWallet } from "./lib/wallet";
 
 /** Private pages need a connected wallet; the previous session is restored before deciding, so no flash of login. */
@@ -55,6 +56,7 @@ export function App() {
                   <Route path="market" element={<Market />} />
                   <Route path="identity" element={<Identity />} />
                   <Route path="activity" element={<Activity />} />
+                  <Route path="plans" element={<Plans />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
               </Route>

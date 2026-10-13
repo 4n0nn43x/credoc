@@ -11,6 +11,7 @@ import {
   parseAbi,
   parseEventLogs,
   stringToHex,
+  zeroAddress,
 } from "viem";
 import { documentaryCreditAbi } from "./abi.ts";
 
@@ -49,6 +50,21 @@ const identityAbi = parseAbi([
   "function register(string agentURI) returns (uint256 agentId)",
   "event Registered(uint256 indexed agentId, string agentURI, address indexed owner)",
 ]);
+/** CredocPass: prepaid plans (attestor 1, importer 2, financier 3), 30-day periods, paid in USDC. */
+export const passAbi = parseAbi([
+  "function price(uint8 plan) view returns (uint96)",
+  "function quote(uint8 plan, uint16 periods) view returns (uint256)",
+  "function activeUntil(address account, uint8 plan) view returns (uint64)",
+  "function isActive(address account, uint8 plan) view returns (bool)",
+  "function verified(address account) view returns (bool)",
+  "function usdc() view returns (address)",
+  "function buy(address account, uint8 plan, uint16 periods) returns (uint64 until)",
+  "event PassBought(address indexed account, uint8 indexed plan, uint64 until, address payer, uint256 paid)",
+]);
+export const PLAN = { attestor: 1, importer: 2, financier: 3 } as const;
+export type PlanName = keyof typeof PLAN;
+export type PlanStatus = Record<PlanName, { until: bigint; active: boolean; price: bigint }> & { verified: boolean };
+
 const reputationAbi = parseAbi([
   "function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)",
 ]);
@@ -144,6 +160,8 @@ export type OpenParams = {
   applicantAgent?: bigint; // ERC-8004 agentId, omitted = none
   docs: DocRequirement[];
   tranches: TrancheSpec[];
+  partner?: Address; // white-label partner or integrator the credit is opened through
+  integratorFeeBps?: number; // its own fee on settled tranches, at most 50 (0.5%)
 };
 
 export enum Status {
@@ -166,6 +184,9 @@ export type CreditView = {
   applicantAgent: bigint | null;
   beneficiaryAgent: bigint | null;
   terms: Hex;
+  partner: Address | null;
+  partnerShareBps: number; // the partner's share of Credoc's fee
+  integratorFeeBps: number; // the partner's own fee on top
   docs: (DocRequirement & { label: string })[];
   tranches: {
     amount: bigint;
@@ -195,6 +216,8 @@ const toContractParams = (p: OpenParams) => ({
   applicantAgent: p.applicantAgent === undefined ? 0n : p.applicantAgent + 1n,
   docs: p.docs,
   tranches: p.tranches.map((t) => ({ amount: t.amount, requiredDocs: t.requiredDocs })),
+  partner: p.partner ?? zeroAddress,
+  integratorFeeBps: p.integratorFeeBps ?? 0,
 });
 
 /** Client-side mirror of the contract's `open` checks, so the UI can explain errors before sending. */
@@ -443,6 +466,9 @@ export class Credoc {
       applicantAgent: bigint;
       beneficiaryAgent: bigint;
       terms: Hex;
+      partner: Address;
+      partnerShareBps: number;
+      integratorFeeBps: number;
     };
     const [c, d, t] = await Promise.all([
       this.read<RawCredit>("getCredit", [id]),
@@ -465,6 +491,7 @@ export class Credoc {
       status: c.status as Status,
       applicantAgent: c.applicantAgent === 0n ? null : c.applicantAgent - 1n,
       beneficiaryAgent: c.beneficiaryAgent === 0n ? null : c.beneficiaryAgent - 1n,
+      partner: c.partner === zeroAddress ? null : c.partner,
       docs: d.map((x) => ({ docType: x.docType, attestor: x.attestor, label: docLabel(x.docType) })),
       tranches: t.map((tr, ti) => ({
         amount: tr.amount,
@@ -532,6 +559,70 @@ export class Credoc {
       onTimeRate: judged === 0 ? null : delivered / judged,
       averageTicket: v[0] === 0n ? null : BigInt(v[1]),
     };
+  }
+
+  // ---- plans (CredocPass)
+
+  /** The plans contract this credit contract reads, or null if plans are off. */
+  async passAddress(): Promise<Address | null> {
+    const a = await this.read<Address>("pass", []);
+    return a === zeroAddress ? null : a;
+  }
+
+  /** End date, state and current price of each plan for `account`, plus the verified-attestor badge. */
+  async plans(account: Address): Promise<PlanStatus | null> {
+    const pass = await this.passAddress();
+    if (!pass) return null;
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const rd = <T>(functionName: string, args: readonly unknown[]) =>
+      this.publicClient.readContract({ address: pass, abi: passAbi, functionName: functionName as never, args: args as never }) as Promise<T>;
+    const names = Object.keys(PLAN) as PlanName[];
+    const [untils, prices, verified] = await Promise.all([
+      Promise.all(names.map((n) => rd<bigint>("activeUntil", [account, PLAN[n]]))),
+      Promise.all(names.map((n) => rd<bigint>("price", [PLAN[n]]))),
+      rd<boolean>("verified", [account]),
+    ]);
+    const out = { verified } as PlanStatus;
+    names.forEach((n, i) => (out[n] = { until: untils[i]!, active: untils[i]! >= now, price: prices[i]! }));
+    return out;
+  }
+
+  /** Buy or extend a plan for `account` (default: the connected wallet), approving the USDC if needed. */
+  async buyPlan(plan: PlanName, periods: number, account?: Address): Promise<{ until: bigint; hash: Hex }> {
+    const pass = await this.passAddress();
+    if (!pass) throw new Error("plans are not enabled on this contract");
+    const rd = <T>(functionName: string, args: readonly unknown[]) =>
+      this.publicClient.readContract({ address: pass, abi: passAbi, functionName: functionName as never, args: args as never }) as Promise<T>;
+    const [cost, usdc] = await Promise.all([rd<bigint>("quote", [PLAN[plan], periods]), rd<Address>("usdc", [])]);
+    const allowance = await this.publicClient.readContract({
+      address: usdc,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [this.w.account.address, pass],
+    });
+    if (allowance < cost) {
+      const h = await this.w.writeContract({
+        address: usdc,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [pass, cost],
+        chain: this.w.chain,
+        account: this.w.account,
+      });
+      await this.receipt(h);
+    }
+    const { request } = await this.publicClient.simulateContract({
+      address: pass,
+      abi: passAbi,
+      functionName: "buy",
+      args: [account ?? this.w.account.address, PLAN[plan], periods],
+      account: this.w.account,
+    });
+    const hash = await this.w.writeContract(request);
+    const receipt = await this.receipt(hash);
+    if (receipt.status !== "success") throw new Error(`buy reverted: ${hash}`);
+    const [ev] = parseEventLogs({ abi: passAbi, eventName: "PassBought", logs: receipt.logs });
+    return { until: ev!.args.until, hash };
   }
 
   /** Register an ERC-8004 identity for the connected wallet; returns its agentId. */

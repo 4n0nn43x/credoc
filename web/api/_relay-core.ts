@@ -32,7 +32,32 @@ const abi = parseAbi([
   "error NothingOwed()",
   "error AlreadyLinked()",
   "error InsufficientGas()",
+  "function pass() view returns (address)",
+  "function getDocs(uint256 id) view returns ((bytes32 docType, address attestor)[])",
+  "function getCredit(uint256 id) view returns ((address applicant, address beneficiary, address payee, address token, uint64 expiry, uint8 status, uint16 feeBps, uint128 total, uint128 outstanding, uint256 applicantAgent, uint256 beneficiaryAgent, bytes32 terms, address partner, uint16 partnerShareBps, uint16 integratorFeeBps))",
 ]);
+const passAbi = parseAbi(["function isActive(address account, uint8 plan) view returns (bool)"]);
+const ATTESTOR_PLAN = 1;
+const IMPORTER_PLAN = 2;
+
+/**
+ * Free tier: an attestor without a plan, on a credit whose importer has none either, gets FREE_RELAYS relayed
+ * presentations per 30 days. It can always submit directly and pay the gas itself.
+ * ponytail: counted in memory, so a restart resets it; move to a store if abuse shows up.
+ */
+export const FREE_RELAYS = 5;
+const WINDOW_MS = 30 * 86_400_000;
+const used = new Map<string, number[]>();
+export const freeQuota = {
+  left(attestor: string, now = Date.now()): number {
+    const recent = (used.get(attestor.toLowerCase()) ?? []).filter((t) => now - t < WINDOW_MS);
+    used.set(attestor.toLowerCase(), recent);
+    return Math.max(0, FREE_RELAYS - recent.length);
+  },
+  take(attestor: string, now = Date.now()) {
+    used.set(attestor.toLowerCase(), [...(used.get(attestor.toLowerCase()) ?? []), now]);
+  },
+};
 
 /**
  * Gasless presentations: an attestor signs offchain (EIP-712), this relayer submits and pays the few
@@ -75,6 +100,30 @@ export async function relayPresentation(input: unknown, env: RelayEnv): Promise<
   const args = [creditId, Number(tranche), Number(doc), docHash, deadline, signature as Hex] as const;
 
   try {
+    // plans: with CredocPass set, relaying is free for plan holders and capped for everyone else
+    const contract = env.contract as Address;
+    const pass = await pub.readContract({ address: contract, abi, functionName: "pass" });
+    let quotaFor: Address | null = null;
+    if (pass !== "0x0000000000000000000000000000000000000000") {
+      const [docs, credit] = await Promise.all([
+        pub.readContract({ address: contract, abi, functionName: "getDocs", args: [creditId] }),
+        pub.readContract({ address: contract, abi, functionName: "getCredit", args: [creditId] }),
+      ]);
+      const attestor = docs[Number(doc)]?.attestor;
+      if (!attestor) return bad("BadParams", 422);
+      const [a, i] = await Promise.all([
+        pub.readContract({ address: pass, abi: passAbi, functionName: "isActive", args: [attestor, ATTESTOR_PLAN] }),
+        pub.readContract({ address: pass, abi: passAbi, functionName: "isActive", args: [credit.applicant, IMPORTER_PLAN] }),
+      ]);
+      if (!a && !i) {
+        if (freeQuota.left(attestor) === 0)
+          return {
+            status: 402,
+            body: { error: "free relay quota used", plan: "attestor", freeRelays: FREE_RELAYS, hint: "Buy an attestor plan, or submit the presentation yourself." },
+          };
+        quotaFor = attestor;
+      }
+    }
     const { request } = await pub.simulateContract({
       address: env.contract as Address,
       abi,
@@ -86,6 +135,7 @@ export async function relayPresentation(input: unknown, env: RelayEnv): Promise<
     const hash = await wallet.writeContract(request);
     const receipt = await pub.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") return bad("transaction reverted", 502);
+    if (quotaFor) freeQuota.take(quotaFor);
     return { status: 200, body: { hash, seconds: (Date.now() - t0) / 1000, block: receipt.blockNumber.toString() } };
   } catch (e) {
     const revert =

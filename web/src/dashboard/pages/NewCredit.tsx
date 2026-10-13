@@ -1,10 +1,13 @@
-import { Fragment, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Fragment, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { type Address, isAddress, parseUnits } from "viem";
-import { ARC, DOC_LABELS, type OpenParams, docType, validateOpenParams } from "@credoc/sdk";
-import { dateShort, sameAddress } from "../../shared/format";
+import { ARC, DOC_LABELS, type OpenParams, docType, documentaryCreditAbi, validateOpenParams } from "@credoc/sdk";
+import { CREDOC_ADDRESS } from "../../shared/config";
+import { useBrand } from "../../shared/brand";
+import { dateShort, pct, sameAddress } from "../../shared/format";
 import { Amount, Card, PageTitle } from "../components/ui";
 import { FeeNote, FileDrop, type Hashed, SignButton, partyName, prettyDoc } from "../components/form-kit";
+import { publicClient, reader, readFees } from "../lib/clients";
 import { useStore } from "../lib/store";
 import { useTx } from "../lib/tx";
 import { useWallet } from "../lib/wallet";
@@ -35,6 +38,9 @@ const toUnits = (s: string): bigint | null => {
   if (!/^\d+(\.\d{1,6})?$/.test(s.trim())) return null;
   return parseUnits(s.trim(), 6);
 };
+/** What the exporter will be charged on each paid shipment, as the contract will fix it at opening. */
+type Pricing = { feeBps: number; proFeeBps: number; importerPlan: boolean; partnerRegistered: boolean };
+
 const labelOf = (d: DocRow) =>
   d.label === CUSTOM ? d.custom.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "") : d.label;
 
@@ -44,6 +50,24 @@ export function NewCredit() {
   const { now } = useStore();
   const { run } = useTx();
   const navigate = useNavigate();
+  const brand = useBrand();
+  const [pricing, setPricing] = useState<Pricing | null>(null);
+  useEffect(() => {
+    if (!address) return;
+    let live = true;
+    // the contract refuses a partner the owner has not registered: until it is, credits open without one
+    const share = brand.partner && CREDOC_ADDRESS
+      ? publicClient.readContract({ address: CREDOC_ADDRESS, abi: documentaryCreditAbi, functionName: "partnerShareBps", args: [brand.partner] })
+      : 0;
+    Promise.all([readFees(), reader?.plans(address) ?? null, share])
+      .then(([fees, plans, shareBps]) =>
+        live && fees && setPricing({ ...fees, importerPlan: !!plans?.importer.active, partnerRegistered: Number(shareBps) > 0 }),
+      )
+      .catch(() => undefined); // the fee line simply stays generic, and no partner is passed
+    return () => {
+      live = false;
+    };
+  }, [address, brand.partner]);
   const [step, setStep] = useState(0);
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -66,6 +90,11 @@ export function NewCredit() {
   const amounts = f.tranches.map((t) => toUnits(t.amount));
   const total = amounts.reduce<bigint>((s, a) => s + (a ?? 0n), 0n);
   const t0 = now();
+  // nor a partner that is a party to the credit
+  const partner =
+    brand.partner && pricing?.partnerRegistered && !sameAddress(brand.partner, address) && !sameAddress(brand.partner, f.beneficiary)
+      ? brand.partner
+      : null;
   const expiry = f.expiry || isoDay(t0 + 30 * DAY);
 
   // per-step problems, in plain words
@@ -107,6 +136,8 @@ export function NewCredit() {
           expiry: BigInt(dayToTs(expiry)),
           terms: f.terms?.hash ?? ZERO32,
           applicantAgent: f.agent.trim() ? BigInt(f.agent.trim()) : undefined,
+          partner: partner ?? undefined,
+          integratorFeeBps: partner ? brand.integratorFeeBps : 0,
           docs: f.docs.map((d) => ({ docType: docType(labelOf(d)), attestor: d.attestor as Address })),
           tranches: f.tranches.map((t, i) => ({
             amount: amounts[i]!,
@@ -335,7 +366,7 @@ export function NewCredit() {
               )}
 
               {step === 3 && (
-                <Review f={{ ...f, expiry }} token={token} total={total} amounts={amounts} exporterName={exporterName} />
+                <Review f={{ ...f, expiry }} token={token} total={total} amounts={amounts} exporterName={exporterName} pricing={pricing} partnerFee={partner ? { name: brand.name, bps: brand.integratorFeeBps } : null} />
               )}
 
               {(shown.length > 0 || (step === 3 && (sdkErrors.length > 0 || problems.some((p) => p.length)))) && (
@@ -372,7 +403,31 @@ export function NewCredit() {
   );
 }
 
-function Review({ f, token, total, amounts, exporterName }: { f: Form; token: Address; total: bigint; amounts: (bigint | null)[]; exporterName: string }) {
+type PartnerFee = { name: string; bps: number } | null;
+
+function FeeLine({ pricing, partner }: { pricing: Pricing | null; partner: PartnerFee }) {
+  const pro = !!pricing && pricing.importerPlan && pricing.proFeeBps < pricing.feeBps;
+  const partnerFee = partner && partner.bps > 0 ? <>, plus {pct(partner.bps)} for {partner.name}</> : null;
+  return (
+    <li>
+      <i className="ti ti-receipt me-1" />
+      {!pricing ? (
+        <>The exporter pays Credoc's settlement fee on each paid shipment{partnerFee}. Refunds are free.</>
+      ) : pro ? (
+        <>The exporter pays {pct(pricing.proFeeBps)} instead of {pct(pricing.feeBps)} on each paid shipment, thanks to your importer plan{partnerFee}. Refunds are free.</>
+      ) : (
+        <>
+          The exporter pays {pct(pricing.feeBps)} on each paid shipment{partnerFee}. Refunds are free.
+          {pricing.proFeeBps < pricing.feeBps && (
+            <> With an <Link to="/plans" className="link-dark">importer plan</Link>, credits you open cost {pct(pricing.proFeeBps)}.</>
+          )}
+        </>
+      )}
+    </li>
+  );
+}
+
+function Review({ f, token, total, amounts, exporterName, pricing, partnerFee }: { f: Form; token: Address; total: bigint; amounts: (bigint | null)[]; exporterName: string; pricing: Pricing | null; partnerFee: PartnerFee }) {
   const docName = (i: number) => {
     const d = f.docs[i]!;
     return (d.label === CUSTOM ? d.custom.trim() || `document ${i + 1}` : prettyDoc(d.label)).toLowerCase();
@@ -410,6 +465,7 @@ function Review({ f, token, total, amounts, exporterName }: { f: Form; token: Ad
       </ol>
       <ul className="list-unstyled fs-13 text-muted mb-0 d-grid gap-1">
         <li><i className="ti ti-arrow-back-up me-1" />Shipments not paid by the expiry come back to you.</li>
+        <FeeLine pricing={pricing} partner={partnerFee} />
         <li><i className="ti ti-stack-2 me-1" />ONE transaction: it authorizes the amount and opens the credit, tagged with your reference by Arc Memo.</li>
         <li><i className="ti ti-fingerprint me-1" />{f.terms ? <>Contract fingerprint <span className="hash">{f.terms.hash.slice(0, 18)}…</span> ({f.terms.name})</> : "No contract file attached."}</li>
         {f.agent && <li><i className="ti ti-id-badge-2 me-1" />Linked to your identity #{f.agent}.</li>}
