@@ -4,6 +4,15 @@ A letter of credit is how big companies trade with strangers across borders: the
 
 Credoc is a cash-backed letter of credit as a smart contract on Arc. The importer locks USDC or EURC, the freight forwarder signs the bill of lading, and the exporter is paid in the same second. No bank, no correspondent chain, no minimum ticket.
 
+## Live on Arc mainnet
+
+| Contract | Address |
+|---|---|
+| DocumentaryCredit | [`0xBA5e922A3C9eacd10Bc533B3E793EA5b58d961EE`](https://explorer.arc.io/address/0xBA5e922A3C9eacd10Bc533B3E793EA5b58d961EE) |
+| CredocPass | [`0x761bFe87399E7D012c477C166eD0D7A711C305E1`](https://explorer.arc.io/address/0x761bFe87399E7D012c477C166eD0D7A711C305E1) |
+
+Deployed at block 25772228 (chainId 5042). App: https://credoc.xyz
+
 ## How it works
 
 1. **Open.** The importer locks the full amount, split into tranches (one per container or partial shipment). Each tranche lists the documents it needs and who is allowed to attest each one: a freight forwarder for the bill of lading, an inspection agency for the inspection certificate, and so on.
