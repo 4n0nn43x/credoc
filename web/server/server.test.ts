@@ -5,7 +5,7 @@ import { createServer, get } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_BRAND, brandFor, handler, parsePartners, resolveStatic } from "./index.ts";
+import { DEFAULT_BRAND, brandFor, handler, parsePartners, resolveStatic, rpcAllowed } from "./index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "credoc-static-"));
 mkdirSync(join(root, "app"));
@@ -89,4 +89,14 @@ test("brand per host: validated partners, everything else gets the default", asy
   } finally {
     server.close();
   }
+});
+
+test("the RPC proxy only forwards read methods", () => {
+  assert.equal(rpcAllowed({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [] }), true);
+  assert.equal(rpcAllowed([{ method: "eth_call" }, { method: "eth_blockNumber" }]), true);
+  assert.equal(rpcAllowed({ method: "eth_sendRawTransaction" }), false);
+  assert.equal(rpcAllowed([{ method: "eth_call" }, { method: "debug_traceTransaction" }]), false);
+  assert.equal(rpcAllowed([]), false);
+  assert.equal(rpcAllowed(Array.from({ length: 51 }, () => ({ method: "eth_call" }))), false);
+  assert.equal(rpcAllowed(null), false);
 });

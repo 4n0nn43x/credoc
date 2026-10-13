@@ -107,6 +107,39 @@ export async function resolveStatic(root: string, urlPath: string): Promise<stri
   }
 }
 
+/**
+ * Read-only JSON-RPC methods the dashboard needs. The proxy serves them from the site's own origin, because browser
+ * shields and extensions block cross-site calls to the public Arc RPC; writes always go through the user's wallet.
+ */
+export const RPC_METHODS = new Set([
+  "eth_chainId",
+  "eth_blockNumber",
+  "eth_getBlockByNumber",
+  "eth_getLogs",
+  "eth_call",
+  "eth_getBalance",
+  "eth_getCode",
+  "eth_getTransactionCount",
+  "eth_getTransactionReceipt",
+  "eth_getTransactionByHash",
+  "eth_estimateGas",
+  "eth_gasPrice",
+  "eth_maxPriorityFeePerGas",
+  "eth_feeHistory",
+]);
+const RPC_BATCH = 50;
+const ARC_RPC = "https://rpc.mainnet.arc.io";
+
+/** A single call or a batch, every call on the allowlist; anything else is refused before reaching Arc. */
+export function rpcAllowed(body: unknown): boolean {
+  const calls = Array.isArray(body) ? body : [body];
+  return (
+    calls.length > 0 &&
+    calls.length <= RPC_BATCH &&
+    calls.every((c) => !!c && typeof c === "object" && RPC_METHODS.has((c as { method?: unknown }).method as string))
+  );
+}
+
 export function handler(rootDir: string, env: () => RelayEnv = envFromProcess): RequestListener {
   const root = resolve(rootDir);
   return async (req, res) => {
@@ -129,6 +162,31 @@ export function handler(rootDir: string, env: () => RelayEnv = envFromProcess): 
       }
       const r = await relayPresentation(body, env());
       return send(res, r.status, JSON.stringify(r.body), "application/json", { "cache-control": "no-store" });
+    }
+
+    if (path === "/api/rpc") {
+      if (req.method !== "POST") return send(res, 405, "method not allowed", undefined, { allow: "POST" });
+      const raw = await readBody(req);
+      if (raw === null) return send(res, 413, JSON.stringify({ error: "request too large" }), "application/json", { connection: "close" });
+      let body: unknown;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return send(res, 400, JSON.stringify({ error: "invalid JSON" }), "application/json");
+      }
+      if (!rpcAllowed(body)) return send(res, 403, JSON.stringify({ error: "method not allowed" }), "application/json");
+      try {
+        // ponytail: no per-client rate limit; Arc's RPC limits the server's IP, add one here if that bites
+        const up = await fetch(env().rpcUrl || ARC_RPC, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: raw,
+          signal: AbortSignal.timeout(15_000),
+        });
+        return send(res, up.status, await up.text(), "application/json", { "cache-control": "no-store" });
+      } catch {
+        return send(res, 502, JSON.stringify({ error: "Arc RPC unreachable" }), "application/json");
+      }
     }
 
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", undefined, { allow: "GET, HEAD" });
