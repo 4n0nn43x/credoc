@@ -6,6 +6,7 @@ import { explorerAddress, explorerTx } from "../../shared/config";
 import { amountParts, sameAddress, shortHex, utc, relative } from "../../shared/format";
 import type { StatusInfo } from "../lib/model";
 import { useStore } from "../lib/store";
+import { useTheme } from "../../shared/theme";
 
 /** Osen page header, with the serif title shared with the landing page. */
 export function PageTitle({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
@@ -50,8 +51,8 @@ export const tokenSymbol = (token: string) =>
   sameAddress(token, ARC.usdc) ? "USDC" : sameAddress(token, ARC.eurc) ? "EURC" : "TOKEN";
 
 /** "120,000.00 USDC": whole units prominent, cents and currency muted, tabular digits. */
-export function Amount({ value, token, serif, className = "" }: { value: bigint; token?: string; serif?: boolean; className?: string }) {
-  const { whole, cents } = amountParts(value);
+export function Amount({ value, token, serif, className = "", places }: { value: bigint; token?: string; serif?: boolean; className?: string; places?: number }) {
+  const { whole, cents } = amountParts(value, places);
   const ccy = token ? tokenSymbol(token) : null;
   return (
     <span className={`amount num ${serif ? "font-serif" : ""} ${className}`} title={ccy === "USDC" ? "USDC: digital dollar issued by Circle, redeemable 1:1" : ccy === "EURC" ? "EURC: digital euro issued by Circle, redeemable 1:1" : undefined}>
@@ -154,8 +155,9 @@ export function Skeleton({ lines = 3 }: { lines?: number }) {
   );
 }
 
-/** Thin ApexCharts wrapper (ApexCharts 3 matches Osen's chart styles). Toolbar off, ink palette. */
+/** Thin ApexCharts wrapper (ApexCharts 3 matches Osen's chart styles). Toolbar off, ink palette that follows the theme. */
 export function Chart({ options, height = 260 }: { options: ApexOptions; height?: number }) {
+  const dark = useTheme() === "dark";
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<ApexCharts | null>(null);
   const json = JSON.stringify(options);
@@ -168,11 +170,15 @@ export function Chart({ options, height = 260 }: { options: ApexOptions; height?
         toolbar: { show: false },
         zoom: { enabled: false },
         animations: { enabled: !window.matchMedia("(prefers-reduced-motion: reduce)").matches },
+        foreColor: dark ? "#9a968f" : "#78716c",
+        background: "transparent",
         ...options.chart,
         height,
       },
-      grid: { borderColor: "#eceae8", strokeDashArray: 3, ...options.grid },
-      colors: options.colors ?? ["#191919", "#a8a29e", "#d6d3d1"],
+      theme: { mode: dark ? "dark" : "light" },
+      tooltip: { theme: dark ? "dark" : "light", ...options.tooltip },
+      grid: { borderColor: dark ? "#2e2d2b" : "#eceae8", strokeDashArray: 3, ...options.grid },
+      colors: options.colors ?? (dark ? ["#ecebe8", "#9a968f", "#57534e"] : ["#191919", "#a8a29e", "#d6d3d1"]),
       dataLabels: { enabled: false, ...options.dataLabels },
       legend: { show: (options.series?.length ?? 0) > 1, ...options.legend },
     });
@@ -183,6 +189,6 @@ export function Chart({ options, height = 260 }: { options: ApexOptions; height?
     };
     // re-render when the serialized options change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [json, height]);
+  }, [json, height, dark]);
   return <div ref={el} />;
 }

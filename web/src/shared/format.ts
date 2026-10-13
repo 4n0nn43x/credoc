@@ -1,17 +1,17 @@
 import { formatUnits } from "viem";
 
-/** "120,000.00" with exactly two decimals, grouping, tabular-friendly. Token units are 6 decimals. */
-export function amount(units: bigint, decimals = 6): string {
+/** "120,000.00" with `places` decimals (two by default), grouping, tabular-friendly. Token units are 6 decimals. */
+export function amount(units: bigint, decimals = 6, places = 2): string {
   const neg = units < 0n;
   const abs = neg ? -units : units;
   const [int, frac = ""] = formatUnits(abs, decimals).split(".");
   const grouped = int!.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${neg ? "-" : ""}${grouped}.${(frac + "00").slice(0, 2)}`;
+  return `${neg ? "-" : ""}${grouped}.${frac.padEnd(places, "0").slice(0, places)}`;
 }
 
 /** Split for display: integer part prominent, cents and currency muted. */
-export function amountParts(units: bigint): { whole: string; cents: string } {
-  const [whole, cents] = amount(units).split(".");
+export function amountParts(units: bigint, places = 2): { whole: string; cents: string } {
+  const [whole, cents] = amount(units, 6, places).split(".");
   return { whole: whole!, cents: cents! };
 }
 

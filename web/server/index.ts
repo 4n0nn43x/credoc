@@ -1,5 +1,6 @@
 /**
- * Production server: the built site (dist/) plus POST /api/relay, with no framework.
+ * Production server: the built site (dist/), POST /api/relay, the read-only /api/rpc proxy, first-party analytics
+ * (/api/hit) and the admin API (/api/admin/*), with no framework.
  * Runs behind the server's shared Caddy (TLS, compression, security headers), never exposed directly.
  *
  *   STATIC_DIR=dist PORT=8080 RELAYER_KEY=0x... node server.mjs
@@ -7,7 +8,10 @@
 import { createServer, type IncomingMessage, type RequestListener, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
+import { randomBytes } from "node:crypto";
+import { privateKeyToAccount } from "viem/accounts";
 import { envFromProcess, relayPresentation, type RelayEnv } from "../api/_relay-core";
+import { type AdminEnv, adminEnvFromProcess, clearCookie, login, loginMessage, openStore, parseHit, session, sessionCookie } from "./analytics";
 // bundled at build time: the image needs no extra file, and a new partner ships with a new image
 import partnersJson from "../partners.json" with { type: "json" };
 
@@ -140,10 +144,73 @@ export function rpcAllowed(body: unknown): boolean {
   );
 }
 
-export function handler(rootDir: string, env: () => RelayEnv = envFromProcess): RequestListener {
+type Store = ReturnType<typeof openStore>;
+
+/** JSON body of a POST, or the response already sent (413 or 400). */
+async function readJson(req: IncomingMessage, res: ServerResponse): Promise<{ body: unknown } | null> {
+  const raw = await readBody(req);
+  if (raw === null) {
+    send(res, 413, JSON.stringify({ error: "request too large" }), "application/json", { connection: "close" });
+    return null;
+  }
+  try {
+    return { body: JSON.parse(raw) };
+  } catch {
+    send(res, 400, JSON.stringify({ error: "invalid JSON" }), "application/json");
+    return null;
+  }
+}
+
+const json = (res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}) =>
+  send(res, status, JSON.stringify(body), "application/json", { "cache-control": "no-store", ...extra });
+const hostOf = (req: IncomingMessage) => (req.headers.host ?? "").toLowerCase().replace(/:\d+$/, "");
+// only Caddy reaches this server, and it sets X-Forwarded-For
+const ipOf = (req: IncomingMessage) => String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "").split(",")[0]!.trim();
+
+export function handler(
+  rootDir: string,
+  env: () => RelayEnv = envFromProcess,
+  store: Store | null = null,
+  admin: AdminEnv | null = null,
+): RequestListener {
   const root = resolve(rootDir);
   return async (req, res) => {
     const path = (req.url ?? "/").split("?")[0]!;
+
+    if (path === "/api/hit") {
+      if (req.method !== "POST") return send(res, 405, "method not allowed", undefined, { allow: "POST" });
+      const r = await readJson(req, res);
+      if (!r) return;
+      const hit = parseHit(r.body, hostOf(req));
+      if (hit && store && req.headers.dnt !== "1") store.hit(hit, ipOf(req), String(req.headers["user-agent"] ?? ""));
+      res.writeHead(204, { "cache-control": "no-store" });
+      return res.end();
+    }
+
+    if (path.startsWith("/api/admin/")) {
+      if (!admin || !store) return json(res, 503, { error: "admin is not configured" });
+      if (path === "/api/admin/nonce" && req.method === "GET") return json(res, 200, { message: loginMessage(hostOf(req)) });
+      if (path === "/api/admin/login" && req.method === "POST") {
+        const r = await readJson(req, res);
+        if (!r) return;
+        const b = (r.body ?? {}) as Record<string, unknown>;
+        const token = await login(admin, b.message, b.signature);
+        if (!token) return json(res, 401, { error: "not an admin wallet, or the message expired" });
+        return json(res, 200, { address: token.split(".")[0] }, { "set-cookie": sessionCookie(token) });
+      }
+      if (path === "/api/admin/logout" && req.method === "POST") return json(res, 200, {}, { "set-cookie": clearCookie });
+      const who = session(admin, req.headers.cookie);
+      if (!who) return json(res, 401, { error: "sign in first" });
+      if (path === "/api/admin/me" && req.method === "GET") return json(res, 200, { address: who });
+      if (path === "/api/admin/stats" && req.method === "GET") {
+        const days = Math.max(1, Math.min(365, Number(new URL(req.url ?? "/", "http://x").searchParams.get("days")) || 30));
+        // the relayer's address (never its key), so the admin page can watch its gas balance
+        const key = env().relayerKey;
+        const relayer = key && /^0x[0-9a-fA-F]{64}$/.test(key) ? privateKeyToAccount(key as `0x${string}`).address : null;
+        return json(res, 200, { ...store.stats(days), relayer });
+      }
+      return json(res, 404, { error: "not found" });
+    }
     if (path === "/healthz") return send(res, 200, "ok");
     if (path === "/brand.json") {
       // varies by Host: a shared cache must not hand one partner's brand to another domain
@@ -161,6 +228,7 @@ export function handler(rootDir: string, env: () => RelayEnv = envFromProcess): 
         return send(res, 400, JSON.stringify({ error: "invalid JSON" }), "application/json");
       }
       const r = await relayPresentation(body, env());
+      store?.event(r.status === 200 ? "relay" : r.status === 402 ? "relay_quota" : "relay_refused");
       return send(res, r.status, JSON.stringify(r.body), "application/json", { "cache-control": "no-store" });
     }
 
@@ -207,5 +275,16 @@ export function handler(rootDir: string, env: () => RelayEnv = envFromProcess): 
 
 if (process.env.NODE_ENV === "production") {
   const port = Number(process.env.PORT ?? 8080);
-  createServer(handler(process.env.STATIC_DIR ?? "dist")).listen(port, () => console.log(`credoc listening on :${port}`));
+  const admin = adminEnvFromProcess();
+  let store: Store | null = null;
+  try {
+    // without ADMIN_SECRET the visitor hash still rotates, with a secret that only lives as long as the process
+    store = openStore(process.env.DATA_DIR ?? "/data", admin?.secret ?? randomBytes(32).toString("hex"));
+  } catch (e) {
+    console.warn("analytics disabled:", (e as Error).message); // the site must keep serving without its data volume
+  }
+  if (!admin) console.warn("admin disabled: set ADMIN_ADDRESSES and ADMIN_SECRET (32+ characters)");
+  createServer(handler(process.env.STATIC_DIR ?? "dist", envFromProcess, store, admin)).listen(port, () =>
+    console.log(`credoc listening on :${port}`),
+  );
 }

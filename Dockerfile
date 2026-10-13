@@ -22,13 +22,16 @@ ARG VITE_CREDOC_FROM_BLOCK="0"
 ARG VITE_RPC_URL=""
 WORKDIR /src/web
 RUN npm run build && npm run build:server
+# empty, owned by the runtime user: seeds the named volume that keeps analytics across deploys
+RUN mkdir -p /data
 
 # ---- runtime: distroless Node, no shell, no package manager, non-root
 FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:ec2313763dd43931543bd03830466e0c409ce73a487e8d46f10db72d3b816c1c
 WORKDIR /app
 COPY --from=build /src/web/dist ./dist
 COPY --from=build /src/web/dist-server/server.mjs ./server.mjs
-ENV NODE_ENV=production STATIC_DIR=/app/dist PORT=8080
+COPY --from=build --chown=65532:65532 /data /data
+ENV NODE_ENV=production STATIC_DIR=/app/dist PORT=8080 DATA_DIR=/data
 USER 65532:65532
 EXPOSE 8080
 LABEL org.opencontainers.image.title="credoc-web" \

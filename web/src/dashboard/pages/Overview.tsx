@@ -28,7 +28,7 @@ function add(m: Map<string, bigint>, token: string, v: bigint) {
   m.set(token, (m.get(token) ?? 0n) + v);
 }
 
-function Kpi({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
+export function Kpi({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
   return (
     <div className="col-sm-6 col-xl-3">
       <div className="card h-100">
@@ -208,7 +208,8 @@ export function Overview() {
                     tickAmount: 6,
                     labels: { rotate: 0, style: { fontSize: "11px" } },
                   },
-                  yaxis: { labels: { formatter: (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${Math.round(v)}`) } },
+                  // small volumes keep their cents, so ticks never read 0, 0, 1 for a one-dollar day
+                  yaxis: { min: 0, forceNiceScale: true, labels: { formatter: (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v >= 10 ? `${Math.round(v)}` : v.toFixed(2).replace(/\.?0+$/, "")) } },
                   plotOptions: { bar: { columnWidth: "60%", borderRadius: 2 } },
                   tooltip: { y: { formatter: (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) } },
                 }}
