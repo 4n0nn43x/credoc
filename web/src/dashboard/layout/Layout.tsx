@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { CommandPalette, Kbd, MOD, useShortcuts } from "./CommandPalette";
 import { LogoMark } from "../../shared/Logo";
+import { useBrand } from "../../shared/brand";
 import { ThemeToggle } from "../../shared/ThemeToggle";
 import { CREDOC_ADDRESS, chain, explorerAddress } from "../../shared/config";
 import { amount, shortHex } from "../../shared/format";
@@ -33,6 +34,7 @@ const NAV: { title: string; items: { to: string; icon: string; label: string; ba
       { to: "/activity", icon: "ti-activity", label: "Activity" },
     ],
   },
+  { title: "Account", items: [{ to: "/plans", icon: "ti-crown", label: "Plans" }] },
 ];
 
 /** Osen sizes the sidebar from the window width; mirror its breakpoints without its jQuery. */
@@ -51,11 +53,13 @@ function useSidenavSize() {
 }
 
 function Sidenav({ actionCount, close }: { actionCount: number; close: () => void }) {
+  const brand = useBrand();
   return (
     <div className="sidenav-menu">
       <NavLink to="/" className="logo px-4" onClick={close}>
         <LogoMark className="credoc-mark" />
         <span className="credoc-wordmark logo-lg-text">Credoc</span>
+        {brand.name !== "Credoc" && <span className="logo-lg-text fs-12 text-muted ms-2 text-truncate">{brand.name}</span>}
       </NavLink>
       <button className="button-close-fullsidebar" onClick={close} aria-label="Close menu">
         <i className="ti ti-x align-middle" />
@@ -201,6 +205,7 @@ export function Layout() {
   const { credits, offers, now, status, error } = useStore();
   const actions = pendingActions(credits, offers, address, now());
   const { pathname } = useLocation();
+  const brand = useBrand();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -237,7 +242,9 @@ export function Layout() {
         </div>
         <footer className="footer">
           <div className="page-container d-flex justify-content-between flex-wrap gap-2 fs-12 text-muted">
-            <span>Credoc · letters of credit settled on Arc</span>
+            <span>
+              {brand.name === "Credoc" ? "Credoc · letters of credit settled on Arc" : `${brand.name} · Powered by Credoc`}
+            </span>
             <span>
               <a href="/" className="link-secondary me-3">Home</a>
               <a href="/#faq" className="link-secondary">FAQ</a>

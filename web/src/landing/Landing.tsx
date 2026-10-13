@@ -3,7 +3,7 @@ import { HeroSketch } from "./HeroSketch";
 import { ThemeToggle } from "../shared/ThemeToggle";
 import { useThemeShortcut } from "../shared/theme";
 import { Navbar, focusRing } from "./Navbar";
-import { Arc, CtaBand, Faq, Financing, Footer, How, Product } from "./Sections";
+import { Arc, CtaBand, Faq, Financing, Footer, How, Pricing, Product } from "./Sections";
 
 const PILLARS = [
   { n: "01", label: "Secured", href: "#how" },
@@ -99,6 +99,7 @@ export function Landing() {
         <How />
         <Financing />
         <Arc />
+        <Pricing />
         <Faq />
         <CtaBand />
       </main>

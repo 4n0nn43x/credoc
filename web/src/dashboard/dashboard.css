@@ -108,6 +108,7 @@ html[data-sidenav-size="condensed"] .credoc-sidenav-note .note-text { display: n
 }
 [data-bs-theme=dark] .btn-outline-dark {
   --osen-btn-color: #ecebe8; --osen-btn-border-color: #4a4845; --osen-btn-hover-color: #141413; --osen-btn-hover-bg: #ecebe8; --osen-btn-hover-border-color: #ecebe8;
+  --osen-btn-disabled-color: #9a968f; --osen-btn-disabled-border-color: #4a4845;
 }
 [data-bs-theme=dark] .badge.bg-dark { background-color: #ecebe8 !important; color: #141413; }
 [data-bs-theme=dark] .micro-label { color: rgba(236, 235, 232, 0.5); }

@@ -19,6 +19,7 @@ export const PAGES = [
   { to: "/market", label: "Receivables market", icon: "ti-building-bank", keys: ["G", "M"] },
   { to: "/identity", label: "Track record", icon: "ti-id-badge-2", keys: ["G", "T"] },
   { to: "/activity", label: "Activity", icon: "ti-activity", keys: ["G", "Y"] },
+  { to: "/plans", label: "Plans", icon: "ti-crown", keys: ["G", "P"] },
 ] as const;
 
 const typing = (t: EventTarget | null) =>

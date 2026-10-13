@@ -132,3 +132,25 @@ The parties could extend the expiry by up to two years, then accept an offer pri
 - The rate is fixed per credit at opening; the owner (`Ownable2Step`) can only change it for future credits, never above `MAX_FEE_BPS` = 1%.
 - `withdrawFees` is callable by anyone and only pays the treasury.
 - Tests: `test_fee_*` and the invariant suite, which now runs with a 0.25% fee and random `withdrawFees` calls.
+
+---
+
+## Third pass, 2026-10-13: plans (CredocPass) and white-label partners
+
+A fresh reviewer audited the commit that added prepaid plans and partner fees, with PoCs run against the code. No way to steal, freeze or misdirect escrowed funds; the solvency invariant (now including partner balances and plan toggles) holds.
+
+### P-1 (Medium) An importer could name itself as integrator and take 0.5% from the exporter
+`open` accepted any `partner` with an integrator fee. The importer set itself, and on a 100k tranche received 500 back from the exporter's proceeds, which the exporter never agreed to on-chain.
+**Fix:** a partner must be registered by the owner and can be neither the applicant nor the beneficiary. (`test_partner_onlyRegisteredAndNeverAParty`)
+
+### P-2 (Low) Any applicant could name a registered partner and halve Credoc's fee
+Kickback schemes with a registered partner. **Fix:** same registration rule; registered partners are under contract with Credoc and can be unregistered (share 0) for future credits. Residual risk accepted.
+
+### P-3 (Low) `CredocPass.buy` truncated the end date to uint64
+Buying on top of a far-future grant wrapped it to 1970, killing the plan. **Fix:** revert instead. (`test_buy_cannotWrapAGrant`)
+
+### Info
+- A pass answering a non-boolean word made `abi.decode` revert, blocking settlement: now any malformed answer means no discount. (`test_plan_malformedAnswerNeverBlocks`)
+- Plans are not bound to a role: an exporter holding a financier plan collects its own proceeds at the plan rate. Accepted as pricing, not security.
+- `TrancheSettled.fee` is everything withheld (Credoc fee plus integrator fee); `PartnerFeeAccrued` gives the partner's part.
+- `CreditPartner` is now emitted after `CreditOpened`.

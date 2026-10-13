@@ -11,6 +11,7 @@ const LINKS = [
   { href: "#product", label: "Product" },
   { href: "#how", label: "How it works" },
   { href: "#arc", label: "Why Arc" },
+  { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "FAQ" },
 ];
 

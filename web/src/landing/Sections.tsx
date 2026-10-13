@@ -314,6 +314,101 @@ export function Arc() {
   );
 }
 
+/* 4b. Pricing */
+
+const PLANS = [
+  {
+    name: "Attestor",
+    price: "49",
+    who: "Forwarders and inspectors",
+    items: ["Unlimited gasless presentations", "Can be paid by the importer"],
+  },
+  {
+    name: "Importer",
+    price: "99",
+    who: "Buyers who open credits",
+    items: ["0.10% fee instead of 0.25% on credits opened while active", "Gasless presentations for all your attestors"],
+  },
+  {
+    name: "Financier",
+    price: "299",
+    who: "Buyers of receivables",
+    items: ["0.10% fee on proceeds collected while active", "Applies to every receivable you hold"],
+  },
+];
+
+export function Pricing() {
+  return (
+    <Section
+      id="pricing"
+      micro="Pricing"
+      heading="Pay per shipment, or prepay a plan"
+      intro="No subscription is needed to open a credit. Plans are paid in USDC by periods of 30 days, and a year of 12 periods costs 10."
+    >
+      <div className="grid lg:grid-cols-[1fr_2fr] gap-px bg-gray-200 border border-gray-200">
+        <div className="bg-wash p-6 sm:p-8 flex flex-col">
+          <p className={label}>Pay as you go</p>
+          <p className="mt-4 font-serif text-5xl sm:text-6xl text-ink tracking-tight">0.25%</p>
+          <p className={`mt-2 ${body}`}>of each shipment paid to the exporter.</p>
+          <ul className="mt-6 space-y-2 text-sm text-ink">
+            <li>Refunds are free</li>
+            <li>No minimum ticket, no account fee</li>
+            <li>About 0.01 USDC of network fee per transaction</li>
+          </ul>
+          <p className="mt-auto pt-6 text-xs text-ink/60">
+            Bank letters of credit typically cost 0.75% to 1.5% of the amount, plus minimum fees per credit.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-3 gap-px bg-gray-200">
+          {PLANS.map((p) => (
+            <div key={p.name} className="bg-white p-6 sm:p-8 flex flex-col">
+              <p className={label}>{p.who}</p>
+              <h3 className="mt-3 font-serif text-2xl text-ink">{p.name}</h3>
+              <p className="mt-4 text-ink">
+                <span className="font-serif text-4xl tracking-tight tabular-nums">{p.price}</span>
+                <span className="text-sm text-ink/60"> USDC / 30 days</span>
+              </p>
+              <ul className="mt-6 space-y-2 text-sm text-ink/70">
+                {p.items.map((i) => (
+                  <li key={i} className="pl-4 relative before:absolute before:left-0 before:top-[0.6em] before:h-px before:w-2 before:bg-ink/40">
+                    {i}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="mt-4 text-xs text-ink/60">
+        The verified attestor badge is granted after a business verification, never sold with a plan.
+      </p>
+
+      <div className="mt-16 sm:mt-20 grid md:grid-cols-2 gap-8 md:gap-16 border-t border-gray-300 pt-10">
+        <div>
+          <p className={label}>Partners and white label</p>
+          <h3 className="mt-3 font-serif text-2xl sm:text-3xl text-ink">Credoc under your brand</h3>
+          <p className={`mt-4 ${body}`}>
+            Banks, forwarders and trade platforms can offer documentary credits to their own customers, on their own
+            domain. The contract stays the same, so funds are never held by you or by us.
+          </p>
+          <a
+            href="mailto:partners@credoc.xyz"
+            className={`mt-6 inline-flex items-center gap-2 text-sm font-medium text-ink underline underline-offset-4 decoration-gray-300 hover:decoration-ink ${focusRing}`}
+          >
+            partners@credoc.xyz <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          </a>
+        </div>
+        <dl className="border-t border-gray-200 md:border-t-0">
+          <Row k="Your brand and domain" v="Included" />
+          <Row k="Share of Credoc's fee" v="25%, more for banks" strong />
+          <Row k="Your own fee on top" v="Optional, up to 0.5%" />
+          <Row k="Setup fee for launch partners" v="None" />
+        </dl>
+      </div>
+    </Section>
+  );
+}
+
 /* 5. FAQ */
 
 const FAQS = [

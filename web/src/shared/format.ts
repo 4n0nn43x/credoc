@@ -43,3 +43,6 @@ export const dateShort = (ts: bigint | number) =>
   new Date(Number(ts) * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
 export const sameAddress = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/** Basis points as a percentage: 25 -> "0.25%". */
+export const pct = (bps: number) => `${(bps / 100).toFixed(2)}%`;

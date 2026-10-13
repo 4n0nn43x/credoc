@@ -5,7 +5,7 @@ import { Addr, Amount, Card, Empty, PageTitle, Skeleton, StatusBadge, TxLink, Wh
 import { CreditStyles, Stepper, describe, prettyDoc, who } from "../components/credit-kit";
 import { ActionCard } from "../components/credit-actions";
 import { CREDOC_ADDRESS } from "../../shared/config";
-import { sameAddress, shortHex } from "../../shared/format";
+import { pct, sameAddress, shortHex } from "../../shared/format";
 import { paidAmount, refundedAmount, status, steps } from "../lib/model";
 import { reader } from "../lib/clients";
 import { type ChainEvent, type CreditRow, useStore } from "../lib/store";
@@ -355,6 +355,18 @@ function Terms({ c }: { c: CreditRow }) {
       <Row k="Refunded">
         <Amount value={refundedAmount(c)} token={c.token} />
       </Row>
+      {c.partner && (
+        <>
+          <Row k="Opened through">
+            <Addr address={c.partner} />
+          </Row>
+          <Row k="Partner fee">
+            <span className="num">
+              {pct(c.integratorFeeBps)} on top · {c.partnerShareBps / 100}% of Credoc's fee
+            </span>
+          </Row>
+        </>
+      )}
       {CREDOC_ADDRESS && (
         <Row k="Contract">
           <Addr address={CREDOC_ADDRESS} />
