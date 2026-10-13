@@ -15,7 +15,9 @@ export type AdminSession =
   | { status: "admin"; address: string }
   | { status: "guest" }
   /** no admin API: Vite dev, or a server without ADMIN_ADDRESSES / ADMIN_SECRET */
-  | { status: "unavailable"; reason: string };
+  | { status: "unavailable"; reason: string }
+  /** the server only serves the admin on its own host name, and this is not it */
+  | { status: "elsewhere" };
 
 let current: AdminSession = { status: "loading" };
 let checked = false;
@@ -37,10 +39,13 @@ async function call(path: string, init?: RequestInit): Promise<{ status: number;
 }
 
 const NO_API = "The admin API only runs on the Credoc server, not on the Vite dev server.";
-const unavailable = (r: { status: number } | null): AdminSession => ({
-  status: "unavailable",
-  reason: r?.status === 503 ? "Admin is not configured on this server: set ADMIN_ADDRESSES and ADMIN_SECRET." : NO_API,
-});
+const unavailable = (r: { status: number } | null): AdminSession =>
+  r?.status === 404
+    ? { status: "elsewhere" }
+    : {
+        status: "unavailable",
+        reason: r?.status === 503 ? "Admin is not configured on this server: set ADMIN_ADDRESSES and ADMIN_SECRET." : NO_API,
+      };
 
 export async function checkAdmin() {
   const r = await call("me");

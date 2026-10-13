@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { type Address, type Hex, parseAbi, parseEventLogs } from "viem";
 import { ARC, documentaryCreditAbi, passAbi } from "@credoc/sdk";
@@ -188,6 +189,15 @@ export function Admin() {
       </>
     );
 
+  if (session.status === "elsewhere")
+    return (
+      <Card>
+        <Empty icon="ti-error-404" title="Page not found">
+          There is nothing here. <Link to="/">Back to the overview</Link>.
+        </Empty>
+      </Card>
+    );
+
   if (session.status === "guest")
     return (
       <div className="admin-signin">
@@ -216,7 +226,7 @@ export function Admin() {
   return <Dashboard session={session} />;
 }
 
-function Dashboard({ session }: { session: Exclude<ReturnType<typeof useAdmin>, { status: "loading" | "guest" }> }) {
+function Dashboard({ session }: { session: Exclude<ReturnType<typeof useAdmin>, { status: "loading" | "guest" | "elsewhere" }> }) {
   const store = useStore();
   const { credits, byId, offers, events, now } = store;
   const { address } = useWallet();

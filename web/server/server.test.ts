@@ -100,3 +100,32 @@ test("the RPC proxy only forwards read methods", () => {
   assert.equal(rpcAllowed(Array.from({ length: 51 }, () => ({ method: "eth_call" }))), false);
   assert.equal(rpcAllowed(null), false);
 });
+
+test("the admin API only answers on its own host, and that host is not counted as traffic", async () => {
+  const { openStore } = await import("./analytics.ts");
+  const { request } = await import("node:http");
+  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-admin-")), "s".repeat(32));
+  const admin = { admins: [], secret: "k".repeat(32), host: "back.example.org" };
+  const server = createServer(handler(root, () => ({}), store, admin));
+  await new Promise<void>((r) => server.listen(0, r));
+  const port = (server.address() as AddressInfo).port;
+  // fetch() cannot set Host, so plain http requests
+  const call = (host: string, path: string, body?: string) =>
+    new Promise<number>((ok, ko) => {
+      const req = request({ port, path, method: body ? "POST" : "GET", headers: { host, "content-type": "application/json", "user-agent": "Mozilla/5.0" } }, (res) => {
+        res.resume();
+        ok(res.statusCode!);
+      });
+      req.on("error", ko);
+      req.end(body);
+    });
+  try {
+    assert.equal(await call("credoc.xyz", "/api/admin/nonce"), 404);
+    assert.equal(await call("back.example.org:443", "/api/admin/nonce"), 200);
+    await call("back.example.org", "/api/hit", JSON.stringify({ p: "/" }));
+    await call("credoc.xyz", "/api/hit", JSON.stringify({ p: "/" }));
+    assert.equal(store.stats(1).views, 1);
+  } finally {
+    server.close();
+  }
+});

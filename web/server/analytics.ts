@@ -117,7 +117,8 @@ export function openStore(dir: string, secret: string) {
 
 // ---------------------------------------------------------------- admin session
 
-export type AdminEnv = { admins: Address[]; secret: string };
+/** host: when set, the admin API only answers on that host name (its own origin, see deploy notes). */
+export type AdminEnv = { admins: Address[]; secret: string; host?: string };
 
 export function adminEnvFromProcess(): AdminEnv | null {
   const secret = process.env.ADMIN_SECRET ?? "";
@@ -126,7 +127,8 @@ export function adminEnvFromProcess(): AdminEnv | null {
     .map((a) => a.trim())
     .filter((a) => isAddress(a))
     .map((a) => getAddress(a));
-  return secret.length >= 32 && admins.length ? { admins, secret } : null;
+  const host = (process.env.ADMIN_HOST ?? "").trim().toLowerCase() || undefined;
+  return secret.length >= 32 && admins.length ? { admins, secret, host } : null;
 }
 
 const NONCE_TTL = 5 * 60_000;
