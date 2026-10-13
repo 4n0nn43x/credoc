@@ -26,6 +26,7 @@ function credit(over: Partial<CreditRow> = {}): CreditRow {
     token: "0x3600000000000000000000000000000000000000",
     expiry: 1000n,
     status: 1,
+    feeBps: 0,
     total: 10n,
     outstanding: 10n,
     applicantAgent: null,

@@ -104,3 +104,31 @@ Fix: write "expired" once per refunded tranche, or "delivered" once per credit (
 - `int128` casts: `total <= int128.max` is enforced at open, so `int128(t.amount)` is safe.
 - Accounting: `outstanding` = sum of unsettled tranches. Offers are escrowed 1:1 and `owed` is pull-based. The fuzz and invariant suites pass. `forOutstanding` stops a settlement from front-running `acceptOffer`, and since `outstanding` only decreases it cannot return to an old value.
 - Timing: presentation is allowed at `ts == expiry` and `reclaim` needs `ts > expiry`, which is consistent with Arc's non-strict 1s timestamps. Nothing uses PREVRANDAO.
+
+---
+
+## Second pass, 2026-10-13 (before the mainnet deployment)
+
+Two hunters worked in parallel: one on the reputation track record, one on the money held by the contract (credit escrow, offer escrow, `owed`, and now fees). The reputation findings were proven on a fork of Arc mainnet against the live ERC-8004 registries. The money hunter found no way to steal, freeze or misdirect funds: the solvency invariant held on every path traced, and it now includes collected fees.
+
+### A-1 (Medium) An exporter could keep every failed credit out of its track record by not linking it
+`linkBeneficiaryAgent(id, agentId)` was optional and per credit. An exporter linked only the credits it was about to deliver. Credits it never shipped expired with no entry, so `expired` stayed at 0 and financiers priced it as a perfect record. Proven on the fork: open, never link, reclaim, `getSummary(..., "expired")` returns 0.
+**Fix:** `linkAgent(agentId)` binds an address to its identity once. Every credit where that address is the beneficiary, already open or opened later, reads the identity at settlement or refund time. (`test_audit_linkPerAddressCoversEveryCredit`)
+
+### A-2 (Medium) An exporter could dodge a negative entry by making the contract an operator of its own identity
+The ERC-8004 v2 Reputation Registry refuses feedback from the owner or an operator of the rated agent. An exporter calls `setApprovalForAll(credoc, true)` on the Identity Registry right before `reclaim`. The "expired" entry is then refused as self-feedback, the contract catches the revert so the money still moves, and the exporter revokes the approval afterwards. Proven on the fork against the live registries.
+**Fix:** every refused entry increments `skippedFeedback[agentId]`. The SDK reports it, the dashboard shows it ("unrecorded"), and `quoteAssignment` gives such an exporter no trust at all. (`test_audit_refusedEntriesAreCounted`)
+
+### A-3 (Low) An offer could be accepted when the financier's loss was already certain
+`makeOffer` accepted a `validUntil` past the credit's expiry, and the web form defaulted to 3 days. At `ts == expiry`, with no document presented, the exporter could accept: the financier paid for proceeds that the next `reclaim` refunds to the importer.
+**Fix:** `validUntil <= expiry` is required, and the form caps the validity at the time left. (`test_audit_offerBoundToExpiry`)
+
+### A-4 (Low) An extension agreed after an offer made the financier wait longer than it priced
+The parties could extend the expiry by up to two years, then accept an offer priced against 30 days.
+**Fix:** offers record the expiry they priced, and `acceptOffer` reverts with `StaleOffer` if it changed. (`test_audit_offerBoundToExpiry`)
+
+### Settlement fee added in the same release
+- 0.25% of each settled tranche, deducted from the payee. Refunds are free.
+- The rate is fixed per credit at opening; the owner (`Ownable2Step`) can only change it for future credits, never above `MAX_FEE_BPS` = 1%.
+- `withdrawFees` is callable by anyone and only pays the treasury.
+- Tests: `test_fee_*` and the invariant suite, which now runs with a 0.25% fee and random `withdrawFees` calls.

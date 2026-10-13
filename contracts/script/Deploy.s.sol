@@ -7,7 +7,8 @@ import {DocumentaryCredit, IIdentityRegistry, IReputationRegistry} from "../src/
 import {ArcMainnet} from "./ArcMainnet.sol";
 
 /// Mainnet:
-///   arc-forge script script/Deploy.s.sol --rpc-url arc --account <keystore> --broadcast
+///   TREASURY=0x... arc-forge script script/Deploy.s.sol --rpc-url arc --account <keystore> --broadcast
+/// The deployer becomes the owner (fee and treasury settings). FEE_BPS defaults to 25 (0.25%), capped at 100 by the contract.
 /// The same addresses exist on Arc testnet for the ERC-8004 registries; pass USDC/EURC through env to override.
 contract Deploy is Script {
     function run() external returns (DocumentaryCredit dc) {
@@ -18,7 +19,9 @@ contract Deploy is Script {
         dc = new DocumentaryCredit(
             toks,
             IIdentityRegistry(vm.envOr("IDENTITY_REGISTRY", ArcMainnet.IDENTITY_REGISTRY)),
-            IReputationRegistry(vm.envOr("REPUTATION_REGISTRY", ArcMainnet.REPUTATION_REGISTRY))
+            IReputationRegistry(vm.envOr("REPUTATION_REGISTRY", ArcMainnet.REPUTATION_REGISTRY)),
+            vm.envAddress("TREASURY"),
+            uint16(vm.envOr("FEE_BPS", uint256(25)))
         );
         vm.stopBroadcast();
         console.log("DocumentaryCredit deployed at", address(dc));

@@ -87,18 +87,22 @@ contract Handler is Test {
     function makeOffer(uint256 c, uint256 f, uint128 price) external {
         uint256 id = _credit(c);
         if (id == 0) return;
-        uint128 out = dc.getCredit(id).outstanding;
-        if (out == 0) return;
+        DocumentaryCredit.Credit memory cr = dc.getCredit(id);
+        if (cr.outstanding == 0) return;
         vm.prank(_actor(f));
-        try dc.makeOffer(id, uint128(bound(price, 1, out)), uint64(block.timestamp + 3 days)) returns (uint256 o) {
+        try dc.makeOffer(id, uint128(bound(price, 1, cr.outstanding)), cr.expiry) returns (uint256 o) {
             offerIds.push(o);
         } catch {}
+    }
+
+    function withdrawFees() external {
+        try dc.withdrawFees(usdc) {} catch {}
     }
 
     function acceptOffer(uint256 o) external {
         if (offerIds.length == 0) return;
         uint256 off = offerIds[o % offerIds.length];
-        (uint256 id,,,,,) = dc.offers(off);
+        (uint256 id,,,,,,) = dc.offers(off);
         vm.prank(dc.getCredit(id).payee);
         try dc.acceptOffer(off) {} catch {}
     }
@@ -106,7 +110,7 @@ contract Handler is Test {
     function withdrawOffer(uint256 o) external {
         if (offerIds.length == 0) return;
         uint256 off = offerIds[o % offerIds.length];
-        (, address fin,,,,) = dc.offers(off);
+        (, address fin,,,,,) = dc.offers(off);
         vm.prank(fin);
         try dc.withdrawOffer(off) {} catch {}
     }
@@ -129,12 +133,13 @@ contract Handler is Test {
             if (c.status == DocumentaryCredit.Status.Active) sum += c.outstanding;
         }
         for (uint256 i; i < offerIds.length; i++) {
-            (,, uint128 price,,, bool isOpen) = dc.offers(offerIds[i]);
+            (,, uint128 price,,,, bool isOpen) = dc.offers(offerIds[i]);
             if (isOpen) sum += price;
         }
         for (uint256 i; i < 4; i++) {
             sum += dc.owed(actors[i], usdc);
         }
+        sum += dc.fees(usdc);
     }
 
     function creditCount() external view returns (uint256) {
@@ -157,7 +162,7 @@ contract InvariantTest is Test {
         MockRegistries reg = new MockRegistries();
         IERC20[] memory toks = new IERC20[](1);
         toks[0] = usdc;
-        dc = new DocumentaryCredit(toks, IIdentityRegistry(address(reg)), IReputationRegistry(address(reg)));
+        dc = new DocumentaryCredit(toks, IIdentityRegistry(address(reg)), IReputationRegistry(address(reg)), makeAddr("treasury"), 25);
         h = new Handler(dc, usdc);
         targetContract(address(h));
     }

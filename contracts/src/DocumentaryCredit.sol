@@ -7,6 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @dev Subset of the ERC-8004 v2.0.0 registries deployed at their canonical addresses on Arc.
@@ -37,7 +38,9 @@ interface IReputationRegistry {
 /// to the applicant after expiry. The exporter (beneficiary) can assign the right to the proceeds
 /// to a financier before shipment (UCP 600 art. 39), and every settled, expired or cancelled tranche
 /// writes an ERC-8004 reputation entry that only a real settlement through this contract can produce.
-contract DocumentaryCredit is EIP712, ReentrancyGuard {
+/// Credoc earns a fee on each settled tranche, taken from the payee's proceeds; refunds are free. The rate is fixed
+/// per credit when it opens, so the owner can only change it for future credits, and never above MAX_FEE_BPS.
+contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     using SafeERC20 for IERC20;
 
     // ------------------------------------------------------------------ constants
@@ -45,6 +48,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
     uint256 public constant MAX_DOCS = 8;
     uint256 public constant MAX_TRANCHES = 8;
     uint256 public constant MAX_TENOR = 730 days;
+    uint16 public constant MAX_FEE_BPS = 100; // 1%, hard cap on the settlement fee
 
     bytes32 public constant PRESENTATION_TYPEHASH =
         keccak256("Presentation(uint256 creditId,uint8 tranche,uint8 doc,bytes32 docHash,uint256 deadline)");
@@ -87,10 +91,11 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         IERC20 token;
         uint64 expiry;
         Status status;
+        uint16 feeBps; // settlement fee, fixed when the credit opens
         uint128 total;
         uint128 outstanding; // locked and not yet released or refunded
         uint256 applicantAgent; // ERC-8004 agentId + 1, 0 = none
-        uint256 beneficiaryAgent; // ERC-8004 agentId + 1, 0 = none
+        uint256 beneficiaryAgent; // never stored: getCredit fills it from agentOf[beneficiary]
         bytes32 terms; // hash of the off-chain contract (proforma invoice, incoterms...)
     }
 
@@ -109,6 +114,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         address financier;
         uint128 price; // paid to the current payee on acceptance, escrowed here meanwhile
         uint128 forOutstanding; // offer only valid while outstanding equals this value
+        uint64 expiry; // and while the credit's expiry is still the one it priced
         uint64 validUntil;
         bool open;
     }
@@ -138,6 +144,17 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
     /// @dev funds that could not be pushed (e.g. blocklisted payee), withdrawable later
     mapping(address => mapping(IERC20 => uint256)) public owed;
 
+    /// @dev ERC-8004 agentId + 1 bound to an address, once: every credit where it is the beneficiary then counts,
+    ///      so an exporter cannot pick which credits enter its track record
+    mapping(address => uint256) public agentOf;
+    /// @dev entries the registry refused for an agent (e.g. it made this contract its operator to dodge "expired")
+    mapping(uint256 => uint256) public skippedFeedback;
+
+    address public treasury;
+    uint16 public feeBps;
+    /// @dev settlement fees collected per token, not yet sent to the treasury
+    mapping(IERC20 => uint256) public fees;
+
     // ------------------------------------------------------------------ events
 
     event CreditOpened(
@@ -150,12 +167,14 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         bytes32 terms,
         string ref
     );
-    event BeneficiaryAgentLinked(uint256 indexed creditId, uint256 agentId);
+    event AgentLinked(address indexed account, uint256 agentId);
     event DocumentPresented(
         uint256 indexed creditId, uint8 indexed tranche, uint8 doc, bytes32 docType, bytes32 docHash, address attestor
     );
     event DocumentWaived(uint256 indexed creditId, uint8 indexed tranche, uint8 doc, bytes32 docType);
-    event TrancheSettled(uint256 indexed creditId, uint8 indexed tranche, address indexed payee, uint128 amount);
+    event TrancheSettled(
+        uint256 indexed creditId, uint8 indexed tranche, address indexed payee, uint128 amount, uint128 fee
+    );
     event TrancheRefunded(uint256 indexed creditId, uint8 indexed tranche, uint128 amount);
     event CreditClosed(uint256 indexed creditId, bool fullyDelivered);
     event ExpiryProposed(uint256 indexed creditId, address indexed proposer, uint64 newExpiry);
@@ -169,6 +188,9 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
     );
     event PaymentDeferred(address indexed to, address indexed token, uint256 amount);
     event ReputationSkipped(uint256 indexed creditId, uint256 agentId);
+    event FeeChanged(uint16 feeBps);
+    event TreasuryChanged(address treasury);
+    event FeesWithdrawn(address indexed token, uint256 amount);
 
     // ------------------------------------------------------------------ errors
 
@@ -190,9 +212,15 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
 
     // ------------------------------------------------------------------ constructor
 
-    constructor(IERC20[] memory tokens, IIdentityRegistry identity, IReputationRegistry reputation)
-        EIP712("DocumentaryCredit", "1")
-    {
+    constructor(
+        IERC20[] memory tokens,
+        IIdentityRegistry identity,
+        IReputationRegistry reputation,
+        address treasury_,
+        uint16 feeBps_
+    ) EIP712("DocumentaryCredit", "1") Ownable(msg.sender) {
+        setTreasury(treasury_);
+        setFee(feeBps_);
         for (uint256 i; i < tokens.length; i++) {
             isAllowedToken[tokens[i]] = true;
             volumeTag[tokens[i]] = string.concat("volume-", IERC20Metadata(address(tokens[i])).symbol());
@@ -247,6 +275,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
             token: p.token,
             expiry: p.expiry,
             status: Status.Active,
+            feeBps: feeBps,
             total: uint128(total),
             outstanding: uint128(total),
             applicantAgent: p.applicantAgent,
@@ -259,14 +288,14 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         emit CreditOpened(id, msg.sender, p.beneficiary, address(p.token), uint128(total), p.expiry, p.terms, ref);
     }
 
-    /// @notice The beneficiary links its ERC-8004 identity so settlements build its track record.
-    ///         Once only: relinking a throwaway identity before expiry would dodge negative entries.
-    function linkBeneficiaryAgent(uint256 id, uint256 agentId) external {
-        Credit storage c = _active(id);
-        if (msg.sender != c.beneficiary || !_controlsAgent(msg.sender, agentId)) revert Unauthorized();
-        if (c.beneficiaryAgent != 0) revert AlreadyLinked();
-        c.beneficiaryAgent = agentId + 1;
-        emit BeneficiaryAgentLinked(id, agentId);
+    /// @notice Bind the caller's address to its ERC-8004 identity, so every credit where it is the beneficiary, open or
+    ///         future, builds its track record. Once only: per-credit or repeated linking would let an exporter keep the
+    ///         credits it will not honour out of its record.
+    function linkAgent(uint256 agentId) external {
+        if (!_controlsAgent(msg.sender, agentId)) revert Unauthorized();
+        if (agentOf[msg.sender] != 0) revert AlreadyLinked();
+        agentOf[msg.sender] = agentId + 1;
+        emit AgentLinked(msg.sender, agentId);
     }
 
     // ------------------------------------------------------------------ presentation
@@ -332,14 +361,17 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         bool last = c.outstanding == 0;
         if (last) c.status = Status.Closed;
 
-        _pay(c.token, payee, t.amount);
-        emit TrancheSettled(id, tranche, payee, t.amount);
+        uint128 fee = uint128(uint256(t.amount) * c.feeBps / 10_000);
+        fees[c.token] += fee;
+        _pay(c.token, payee, t.amount - fee);
+        emit TrancheSettled(id, tranche, payee, t.amount, fee);
 
         // a tranche settled through waivers is recorded apart: the applicant alone can produce it
         string memory outcome = t.waivedDocs == 0 ? "delivered" : "waived";
         string memory vTag = volumeTag[c.token];
-        _feedback(id, tranche, c.beneficiaryAgent, 100, 0, outcome, t.amount);
-        _feedback(id, tranche, c.beneficiaryAgent, int128(t.amount), 6, vTag, t.amount);
+        uint256 agent = agentOf[c.beneficiary];
+        _feedback(id, tranche, agent, 100, 0, outcome, t.amount);
+        _feedback(id, tranche, agent, int128(t.amount), 6, vTag, t.amount);
         _feedback(id, tranche, c.applicantAgent, int128(t.amount), 6, vTag, t.amount);
 
         if (last) emit CreditClosed(id, true);
@@ -404,9 +436,10 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         c.outstanding = 0;
         c.status = Status.Closed;
         _pay(c.token, c.applicant, refunded);
+        uint256 agent = agentOf[c.beneficiary];
         for (uint256 i; i < ts.length; i++) {
             // forge-lint: disable-next-line(unsafe-typecast)
-            if (refundedMask & (1 << i) != 0) _feedback(id, uint8(i), c.beneficiaryAgent, 0, 0, outcome, ts[i].amount);
+            if (refundedMask & (1 << i) != 0) _feedback(id, uint8(i), agent, 0, 0, outcome, ts[i].amount);
         }
     }
 
@@ -417,13 +450,17 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
     function makeOffer(uint256 id, uint128 price, uint64 validUntil) external nonReentrant returns (uint256 offerId) {
         Credit storage c = _active(id);
         if (block.timestamp > c.expiry) revert Expired();
-        if (price == 0 || price > c.outstanding || validUntil <= block.timestamp) revert BadParams();
+        // an offer cannot outlive the credit: accepted after expiry, the financier would buy a certain refund
+        if (price == 0 || price > c.outstanding || validUntil <= block.timestamp || validUntil > c.expiry) {
+            revert BadParams();
+        }
         offerId = ++offerCount;
         offers[offerId] = Offer({
             creditId: id,
             financier: msg.sender,
             price: price,
             forOutstanding: c.outstanding,
+            expiry: c.expiry,
             validUntil: validUntil,
             open: true
         });
@@ -447,7 +484,8 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         Credit storage c = _active(o.creditId);
         if (msg.sender != c.payee) revert Unauthorized();
         if (block.timestamp > c.expiry) revert Expired();
-        if (c.outstanding != o.forOutstanding) revert StaleOffer();
+        // the price discounts this amount over this tenor: an extension agreed meanwhile would lengthen the financier's wait
+        if (c.outstanding != o.forOutstanding || c.expiry != o.expiry) revert StaleOffer();
 
         o.open = false;
         address seller = c.payee;
@@ -480,6 +518,30 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         if (ok && (ret.length == 0 ? address(token).code.length > 0 : abi.decode(ret, (bool)))) return;
         owed[to][token] += amount;
         emit PaymentDeferred(to, address(token), amount);
+    }
+
+    // ------------------------------------------------------------------ fees
+
+    /// @notice Settlement fee for credits opened from now on. Open credits keep the rate they opened with.
+    function setFee(uint16 bps) public onlyOwner {
+        if (bps > MAX_FEE_BPS) revert BadParams();
+        feeBps = bps;
+        emit FeeChanged(bps);
+    }
+
+    function setTreasury(address to) public onlyOwner {
+        if (to == address(0)) revert BadParams();
+        treasury = to;
+        emit TreasuryChanged(to);
+    }
+
+    /// @notice Send the collected fees of `token` to the treasury. Callable by anyone: the destination is fixed.
+    function withdrawFees(IERC20 token) external nonReentrant {
+        uint256 amount = fees[token];
+        if (amount == 0) revert NothingOwed();
+        fees[token] = 0;
+        token.safeTransfer(treasury, amount);
+        emit FeesWithdrawn(address(token), amount);
     }
 
     // ------------------------------------------------------------------ ERC-8004
@@ -520,7 +582,10 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
             )
         );
         (bool ok,) = address(reputationRegistry).call{gas: FEEDBACK_GAS}(call);
-        if (!ok) emit ReputationSkipped(id, agentPlusOne - 1);
+        if (!ok) {
+            skippedFeedback[agentPlusOne - 1]++;
+            emit ReputationSkipped(id, agentPlusOne - 1);
+        }
     }
 
     function _feedbackURI(uint256 id) internal view returns (string memory) {
@@ -541,8 +606,9 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard {
         return _docs[id][doc];
     }
 
-    function getCredit(uint256 id) external view returns (Credit memory) {
-        return _credits[id];
+    function getCredit(uint256 id) external view returns (Credit memory c) {
+        c = _credits[id];
+        c.beneficiaryAgent = agentOf[c.beneficiary];
     }
 
     function getDocs(uint256 id) external view returns (DocRequirement[] memory) {
