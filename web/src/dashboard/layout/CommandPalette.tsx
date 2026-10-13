@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { shortHex } from "../../shared/format";
+import { currentTheme, toggleTheme } from "../../shared/theme";
 import { Amount, StatusBadge } from "../components/ui";
 import { status } from "../lib/model";
 import { useStore } from "../lib/store";
@@ -51,6 +52,12 @@ export function useShortcuts(open: () => void) {
       }
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
       const k = e.key.toUpperCase();
+      if (pendingG && Date.now() - pendingG < 1200) {
+        // "G" then a letter: handled below, never a theme switch
+      } else if (k === "D") {
+        toggleTheme();
+        return;
+      }
       if (e.key === "/" || e.key === "?") {
         e.preventDefault();
         open();
@@ -135,6 +142,22 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         ),
       });
     }
+    const dark = currentTheme() === "dark";
+    const themeLabel = dark ? "Switch to light theme" : "Switch to dark theme";
+    if (!term || `${themeLabel} theme dark light`.toLowerCase().includes(term))
+      out.push({
+        id: "theme",
+        group: "Preferences",
+        text: themeLabel,
+        run: toggleTheme,
+        render: (
+          <>
+            <i className={`ti ${dark ? "ti-sun" : "ti-moon"} fs-18 text-muted`} />
+            <span className="flex-grow-1 text-dark">{themeLabel}</span>
+            <Kbd keys={["D"]} />
+          </>
+        ),
+      });
     return out;
   }, [q, credits, now, navigate]);
 
@@ -227,6 +250,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
               </span>
               <span>
                 <Kbd keys={["G"]} /> then a letter: go to a page
+              </span>
+              <span>
+                <Kbd keys={["D"]} /> theme
               </span>
             </div>
           </div>

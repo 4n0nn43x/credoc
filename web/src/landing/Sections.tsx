@@ -3,9 +3,9 @@ import { ArrowRight, ChevronDown, FileText } from "lucide-react";
 import { LogoMark } from "../shared/Logo";
 import { focusRing } from "./Navbar";
 
-const label = "text-[11px] uppercase tracking-[0.2em] text-[#191919]/60 font-medium";
-const title = "mt-3 font-serif font-normal text-3xl sm:text-4xl md:text-5xl leading-tight tracking-tight text-[#191919]";
-const body = "text-sm md:text-[15px] text-[#191919]/70 leading-relaxed";
+const label = "text-[11px] uppercase tracking-[0.2em] text-ink/60 font-medium";
+const title = "mt-3 font-serif font-normal text-3xl sm:text-4xl md:text-5xl leading-tight tracking-tight text-ink";
+const body = "text-sm md:text-[15px] text-ink/70 leading-relaxed";
 
 function Section({ id, micro, heading, intro, children, tinted }: {
   id: string;
@@ -19,7 +19,7 @@ function Section({ id, micro, heading, intro, children, tinted }: {
     <section
       id={id}
       aria-labelledby={`${id}-title`}
-      className={`scroll-mt-20 border-t border-gray-200 py-20 sm:py-28 ${tinted ? "bg-[#F4F3F3]" : "bg-white"}`}
+      className={`scroll-mt-20 border-t border-gray-200 py-20 sm:py-28 ${tinted ? "bg-wash" : "bg-white"}`}
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <p className={label}>{micro}</p>
@@ -74,10 +74,10 @@ export function Product() {
               i % 2 === 1 ? "sm:pl-6 sm:border-l lg:pl-6" : "sm:pr-6"
             }`}
           >
-            <p className="text-sm text-[#191919]/60 tabular-nums">0{i + 1}</p>
-            <h3 className="mt-2 font-serif text-2xl text-[#191919]">{r.role}</h3>
+            <p className="text-sm text-ink/60 tabular-nums">0{i + 1}</p>
+            <h3 className="mt-2 font-serif text-2xl text-ink">{r.role}</h3>
             <p className={`mt-4 ${body}`}>{r.does}</p>
-            <p className="mt-3 text-sm md:text-[15px] text-[#191919] leading-relaxed">{r.gets}</p>
+            <p className="mt-3 text-sm md:text-[15px] text-ink leading-relaxed">{r.gets}</p>
           </article>
         ))}
       </div>
@@ -114,7 +114,7 @@ function Box({ children, ink }: { children: ReactNode; ink?: boolean }) {
   return (
     <div
       className={`flex-1 border px-4 py-3 text-center text-sm ${
-        ink ? "border-[#191919] bg-[#191919] text-white" : "border-gray-300 bg-white text-[#191919]"
+        ink ? "border-ink bg-ink text-white" : "border-gray-300 bg-white text-ink"
       }`}
     >
       {children}
@@ -124,7 +124,7 @@ function Box({ children, ink }: { children: ReactNode; ink?: boolean }) {
 
 function Arrow({ caption }: { caption: string }) {
   return (
-    <div className="flex flex-row sm:flex-col lg:flex-row items-center justify-center gap-2 py-2 sm:py-0 sm:px-3 lg:py-2 lg:px-0 text-[11px] text-[#191919]/60">
+    <div className="flex flex-row sm:flex-col lg:flex-row items-center justify-center gap-2 py-2 sm:py-0 sm:px-3 lg:py-2 lg:px-0 text-[11px] text-ink/60">
       <ArrowRight className="w-4 h-4 text-gray-400 rotate-90 sm:rotate-0 lg:rotate-90" aria-hidden="true" />
       <span>{caption}</span>
     </div>
@@ -133,18 +133,18 @@ function Arrow({ caption }: { caption: string }) {
 
 function HashDiagram() {
   return (
-    <figure className="border border-gray-200 bg-[#F4F3F3] p-5 sm:p-8">
+    <figure className="border border-gray-200 bg-wash p-5 sm:p-8">
       <figcaption className={label}>Your document never leaves your device</figcaption>
       <div className="mt-6 flex flex-col sm:flex-row lg:flex-col items-stretch">
         <Box>
           <FileText className="w-4 h-4 mx-auto mb-2 text-gray-500" aria-hidden="true" />
           bill_of_lading.pdf
-          <span className="block mt-1 text-[11px] text-[#191919]/60">on your device</span>
+          <span className="block mt-1 text-[11px] text-ink/60">on your device</span>
         </Box>
         <Arrow caption="hashed locally" />
         <Box>
           <span className="block font-mono text-xs whitespace-nowrap">0x7a3f...c91e</span>
-          <span className="block mt-1 text-[11px] text-[#191919]/60">fingerprint (hash)</span>
+          <span className="block mt-1 text-[11px] text-ink/60">fingerprint (hash)</span>
         </Box>
         <Arrow caption="signed, relayed" />
         <Box ink>
@@ -152,7 +152,7 @@ function HashDiagram() {
           <span className="block mt-1 text-[11px] text-white/70">only the hash is recorded</span>
         </Box>
       </div>
-      <p className="mt-5 text-xs text-[#191919]/60">Illustrative hash. Anyone holding the file can recompute it and check it matches.</p>
+      <p className="mt-5 text-xs text-ink/60">Illustrative hash. Anyone holding the file can recompute it and check it matches.</p>
     </figure>
   );
 }
@@ -164,9 +164,9 @@ export function How() {
         <ol className="border-l border-gray-300">
           {STEPS.map((s, i) => (
             <li key={s.name} className="relative pl-8 pb-10 last:pb-0">
-              <span className="absolute -left-[5px] top-1.5 w-[9px] h-[9px] bg-[#191919]" aria-hidden="true" />
-              <p className="text-sm text-[#191919]/60 tabular-nums">Step 0{i + 1}</p>
-              <h3 className="mt-1 font-serif text-2xl text-[#191919]">{s.name}</h3>
+              <span className="absolute -left-[5px] top-1.5 w-[9px] h-[9px] bg-ink" aria-hidden="true" />
+              <p className="text-sm text-ink/60 tabular-nums">Step 0{i + 1}</p>
+              <h3 className="mt-1 font-serif text-2xl text-ink">{s.name}</h3>
               <p className={`mt-2 ${body}`}>{s.text}</p>
             </li>
           ))}
@@ -184,8 +184,8 @@ export function How() {
 function Row({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-2.5 border-b border-gray-200 last:border-b-0">
-      <dt className="text-sm text-[#191919]/70">{k}</dt>
-      <dd className={`text-sm tabular-nums text-right ${strong ? "font-semibold text-[#191919]" : "text-[#191919]"}`}>{v}</dd>
+      <dt className="text-sm text-ink/70">{k}</dt>
+      <dd className={`text-sm tabular-nums text-right ${strong ? "font-semibold text-ink" : "text-ink"}`}>{v}</dd>
     </div>
   );
 }
@@ -194,8 +194,8 @@ function MockCard({ heading, children }: { heading: string; children: ReactNode 
   return (
     <div className="mt-8 border border-gray-200 bg-white shadow-sm">
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
-        <span className="text-sm font-medium text-[#191919]">{heading}</span>
-        <span className="text-[11px] uppercase tracking-[0.2em] text-[#191919]/60">Example</span>
+        <span className="text-sm font-medium text-ink">{heading}</span>
+        <span className="text-[11px] uppercase tracking-[0.2em] text-ink/60">Example</span>
       </div>
       <div className="px-5 py-4">{children}</div>
     </div>
@@ -207,7 +207,7 @@ export function Financing() {
     <Section id="financing" micro="Financing" heading="Cash before the goods arrive">
       <div className="grid md:grid-cols-2 gap-12 md:gap-16">
         <div>
-          <h3 className="font-serif text-2xl sm:text-3xl text-[#191919]">Paid before you ship</h3>
+          <h3 className="font-serif text-2xl sm:text-3xl text-ink">Paid before you ship</h3>
           <p className={`mt-4 ${body}`}>
             Assignment of proceeds, as in UCP 600 article 39. A financier buys the right to a tranche's proceeds
             before shipment, at a discount. The payment is escrowed, the exporter is paid now, and the financier
@@ -222,7 +222,7 @@ export function Financing() {
           </MockCard>
         </div>
         <div>
-          <h3 className="font-serif text-2xl sm:text-3xl text-[#191919]">A track record that travels</h3>
+          <h3 className="font-serif text-2xl sm:text-3xl text-ink">A track record that travels</h3>
           <p className={`mt-4 ${body}`}>
             Every settled, expired or cancelled tranche writes an ERC-8004 reputation entry to the canonical
             registry on Arc. Read back filtered by the Credoc contract, it becomes a portable history that
@@ -234,11 +234,11 @@ export function Financing() {
               <Row k="Expired" v="1" />
               <Row k="Cancelled" v="0" />
             </dl>
-            <p className="mt-3 text-xs text-[#191919]/60">Settled through Credoc only, read from ERC-8004.</p>
+            <p className="mt-3 text-xs text-ink/60">Settled through Credoc only, read from ERC-8004.</p>
           </MockCard>
         </div>
       </div>
-      <p className="mt-8 text-xs text-[#191919]/60">Figures in these cards are illustrative, not quotes or real accounts.</p>
+      <p className="mt-8 text-xs text-ink/60">Figures in these cards are illustrative, not quotes or real accounts.</p>
     </Section>
   );
 }
@@ -273,15 +273,15 @@ export function Arc() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-gray-200 border border-gray-200">
         {PRIMITIVES.map((p) => (
           <div key={p.name} className="bg-white p-6 sm:p-8">
-            <h3 className="font-medium text-[#191919]">{p.name}</h3>
+            <h3 className="font-medium text-ink">{p.name}</h3>
             <p className={`mt-2 ${body}`}>{p.use}</p>
           </div>
         ))}
       </div>
 
       <div className="mt-16 sm:mt-20">
-        <h3 className="font-serif text-2xl sm:text-3xl text-[#191919]">Bank letter of credit vs Credoc</h3>
-        <p className="mt-3 text-sm text-[#191919]/70">
+        <h3 className="font-serif text-2xl sm:text-3xl text-ink">Bank letter of credit vs Credoc</h3>
+        <p className="mt-3 text-sm text-ink/70">
           The trade finance gap is about 2.5 trillion USD, and about 41% of SME applications are rejected (Asian
           Development Bank).
         </p>
@@ -289,21 +289,21 @@ export function Arc() {
           <table className="w-full min-w-[320px] text-left text-sm border-t border-gray-300">
             <thead>
               <tr className="border-b border-gray-300">
-                <th scope="col" className="py-3 pr-4 font-medium text-[#191919]/60 sr-only sm:not-sr-only">
+                <th scope="col" className="py-3 pr-4 font-medium text-ink/60 sr-only sm:not-sr-only">
                   Aspect
                 </th>
-                <th scope="col" className="py-3 pr-4 font-medium text-[#191919]">Bank letter of credit</th>
-                <th scope="col" className="py-3 font-medium text-[#191919]">Credoc</th>
+                <th scope="col" className="py-3 pr-4 font-medium text-ink">Bank letter of credit</th>
+                <th scope="col" className="py-3 font-medium text-ink">Credoc</th>
               </tr>
             </thead>
             <tbody>
               {COMPARE.map(([k, bank, us]) => (
                 <tr key={k} className="border-b border-gray-200 align-top">
-                  <th scope="row" className="py-4 pr-4 font-normal text-[#191919]/60 hidden sm:table-cell">
+                  <th scope="row" className="py-4 pr-4 font-normal text-ink/60 hidden sm:table-cell">
                     {k}
                   </th>
-                  <td className="py-4 pr-4 text-[#191919]/70">{bank}</td>
-                  <td className="py-4 text-[#191919]">{us}</td>
+                  <td className="py-4 pr-4 text-ink/70">{bank}</td>
+                  <td className="py-4 text-ink">{us}</td>
                 </tr>
               ))}
             </tbody>
@@ -334,7 +334,7 @@ export function Faq() {
         {FAQS.map(([q, a]) => (
           <details key={q} className="group border-b border-gray-200">
             <summary
-              className={`flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-[#191919] font-medium [&::-webkit-details-marker]:hidden ${focusRing}`}
+              className={`flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-ink font-medium [&::-webkit-details-marker]:hidden ${focusRing}`}
             >
               {q}
               <ChevronDown
@@ -353,9 +353,9 @@ export function Faq() {
 /* 6. CTA */
 
 export function CtaBand() {
-  const inkRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#191919]";
+  const inkRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-ink";
   return (
-    <section aria-labelledby="cta-title" className="bg-[#191919] text-white">
+    <section aria-labelledby="cta-title" className="bg-ink text-white">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-20 sm:py-28 text-center">
         <h2 id="cta-title" className="font-serif font-normal text-3xl sm:text-5xl leading-tight tracking-tight">
           Your next shipment, settled in a second.
@@ -363,7 +363,7 @@ export function CtaBand() {
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
           <a
             href="/app/"
-            className={`px-6 sm:px-8 py-3 sm:py-3.5 bg-white text-[#191919] text-sm font-medium rounded-lg hover:bg-white/90 transition-colors duration-200 ${inkRing}`}
+            className={`px-6 sm:px-8 py-3 sm:py-3.5 bg-white text-ink text-sm font-medium rounded-lg hover:bg-white/90 transition-colors duration-200 ${inkRing}`}
           >
             Launch app
           </a>
@@ -381,10 +381,10 @@ export function Footer() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 flex flex-col md:flex-row gap-8 md:items-start md:justify-between">
         <div>
           <a href="#top" className={`inline-flex items-center gap-2.5 rounded ${focusRing}`}>
-            <LogoMark className="w-5 h-5 text-[#191919]" />
-            <span className="font-semibold tracking-tight text-[#191919]">Credoc</span>
+            <LogoMark className="w-5 h-5 text-ink" />
+            <span className="font-semibold tracking-tight text-ink">Credoc</span>
           </a>
-          <p className="mt-3 text-sm text-[#191919]/70">Built on Arc.</p>
+          <p className="mt-3 text-sm text-ink/70">Built on Arc.</p>
         </div>
         <nav aria-label="Footer">
           <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -397,7 +397,7 @@ export function Footer() {
               ["/app/", "Launch app"],
             ].map(([href, text]) => (
               <li key={href}>
-                <a href={href} className={`text-[#191919]/70 hover:text-[#191919] transition-colors duration-200 rounded ${focusRing}`}>
+                <a href={href} className={`text-ink/70 hover:text-ink transition-colors duration-200 rounded ${focusRing}`}>
                   {text}
                 </a>
               </li>
@@ -406,7 +406,7 @@ export function Footer() {
         </nav>
       </div>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10">
-        <p className="pt-6 border-t border-gray-200 text-xs text-[#191919]/60">
+        <p className="pt-6 border-t border-gray-200 text-xs text-ink/60">
           Credoc never holds funds. Smart contracts are provided as is.
         </p>
       </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { CommandPalette, Kbd, MOD, useShortcuts } from "./CommandPalette";
 import { LogoMark } from "../../shared/Logo";
+import { ThemeToggle } from "../../shared/ThemeToggle";
 import { CREDOC_ADDRESS, chain, explorerAddress } from "../../shared/config";
 import { amount, shortHex } from "../../shared/format";
 import { pendingActions } from "../lib/model";
@@ -140,6 +141,7 @@ function Topbar({ toggle, openPalette }: { toggle: () => void; openPalette: () =
         </div>
 
         <div className="d-flex align-items-center gap-2">
+          <ThemeToggle size={26} className="topbar-link credoc-theme-btn" />
           <span className="network-pill d-none d-sm-inline-flex" title={`chainId ${chain.id}`}>
             <span className="dot" /> {chain.name}
           </span>
