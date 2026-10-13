@@ -123,3 +123,8 @@ html[data-sidenav-size="condensed"] .credoc-sidenav-note .note-text { display: n
 [data-bs-theme=dark] .credoc-toast { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
 [data-bs-theme=dark] .credoc-palette .modal-content { box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); }
 [data-bs-theme=dark] .modal-backdrop { --osen-backdrop-bg: #000; --osen-backdrop-opacity: 0.6; }
+/* dark theme: checkboxes and light outline buttons keep a visible edge on dark paper */
+[data-bs-theme=dark] .form-check-input { background-color: #232220; border-color: #6b6863; }
+[data-bs-theme=dark] .form-check-input:checked { background-color: #ecebe8; border-color: #ecebe8; --osen-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23141413' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e"); }
+[data-bs-theme=dark] .btn-outline-light { --osen-btn-color: #c9c6c1; --osen-btn-border-color: #4a4845; --osen-btn-hover-color: #141413; --osen-btn-hover-bg: #ecebe8; --osen-btn-hover-border-color: #ecebe8; }
+[data-bs-theme=dark] .bg-dark.text-white { color: #141413 !important; } /* ink swaps to light: its text must turn dark */

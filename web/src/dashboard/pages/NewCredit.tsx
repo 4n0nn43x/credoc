@@ -96,6 +96,9 @@ export function NewCredit() {
       ? brand.partner
       : null;
   const expiry = f.expiry || isoDay(t0 + 30 * DAY);
+  // with a single document there is nothing to choose: every shipment is paid on that document
+  const single = f.docs.length === 1;
+  const tranches = single ? f.tranches.map((t) => ({ ...t, docs: [true] })) : f.tranches;
 
   // per-step problems, in plain words
   const problems = (() => {
@@ -116,7 +119,7 @@ export function NewCredit() {
     const labels = f.docs.map(labelOf);
     if (new Set(labels).size !== labels.length) p[1]!.push("Each document can be listed only once.");
 
-    f.tranches.forEach((t, i) => {
+    tranches.forEach((t, i) => {
       const n = `Shipment ${i + 1}`;
       if (!amounts[i] || amounts[i] === 0n) p[2]!.push(`${n}: enter an amount (up to 6 decimals).`);
       if (!f.docs.some((_, d) => t.docs[d])) p[2]!.push(`${n}: tick at least one document.`);
@@ -139,7 +142,7 @@ export function NewCredit() {
           partner: partner ?? undefined,
           integratorFeeBps: partner ? brand.integratorFeeBps : 0,
           docs: f.docs.map((d) => ({ docType: docType(labelOf(d)), attestor: d.attestor as Address })),
-          tranches: f.tranches.map((t, i) => ({
+          tranches: tranches.map((t, i) => ({
             amount: amounts[i]!,
             requiredDocs: t.docs.reduce((m, on, d) => (on && d < f.docs.length ? m | (1 << d) : m), 0),
           })),
@@ -274,9 +277,11 @@ export function NewCredit() {
                             <input id={`nc-att-${i}`} className="form-control font-monospace" placeholder="0x…" value={d.attestor} onChange={(e) => setDoc(i, { attestor: e.target.value.trim() })} />
                           </div>
                           <div className="col-md-1 text-md-end">
-                            <button type="button" className="btn btn-sm btn-outline-light text-muted" onClick={() => removeDoc(i)} disabled={f.docs.length === 1} aria-label={`Remove document ${i + 1}`}>
-                              <i className="ti ti-trash" />
-                            </button>
+                            {!single && (
+                              <button type="button" className="btn btn-sm btn-outline-light text-muted" onClick={() => removeDoc(i)} aria-label={`Remove document ${i + 1}`} title="Remove this document">
+                                <i className="ti ti-trash" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -291,14 +296,17 @@ export function NewCredit() {
 
               {step === 2 && (
                 <>
-                  <p className="text-muted">Split the payment by shipment. Each shipment is paid on its own, as soon as its documents are in.</p>
+                  <p className="text-muted">
+                    Split the payment by shipment. Each shipment is paid on its own, as soon as its documents are in.
+                    {single && <> With one document, each shipment is paid when its {prettyDoc(labelOf(f.docs[0]!) || "document")} is attested.</>}
+                  </p>
                   <div className="table-responsive">
                     <table className="table table-centered mb-0">
                       <thead>
                         <tr>
                           <th>Shipment</th>
                           <th style={{ minWidth: 150 }}>Amount ({f.ccy})</th>
-                          {f.docs.map((d, i) => (
+                          {!single && f.docs.map((d, i) => (
                             <th key={i} className="fs-12 text-center">{d.label === CUSTOM ? d.custom || `Document ${i + 1}` : prettyDoc(d.label)}</th>
                           ))}
                           <th />
@@ -311,7 +319,7 @@ export function NewCredit() {
                             <td>
                               <input className="form-control num" inputMode="decimal" placeholder="15000" value={t.amount} onChange={(e) => setTr(i, { amount: e.target.value.replace(/,/g, "") })} aria-label={`Amount for shipment ${i + 1}`} />
                             </td>
-                            {f.docs.map((d, j) => (
+                            {!single && f.docs.map((d, j) => (
                               <td key={j} className="text-center">
                                 <input
                                   type="checkbox"
@@ -323,9 +331,11 @@ export function NewCredit() {
                               </td>
                             ))}
                             <td className="text-end">
-                              <button type="button" className="btn btn-sm btn-outline-light text-muted" onClick={() => set({ tranches: f.tranches.filter((_, j) => j !== i) })} disabled={f.tranches.length === 1} aria-label={`Remove shipment ${i + 1}`}>
-                                <i className="ti ti-trash" />
-                              </button>
+                              {f.tranches.length > 1 && (
+                                <button type="button" className="btn btn-sm btn-outline-light text-muted" onClick={() => set({ tranches: f.tranches.filter((_, j) => j !== i) })} aria-label={`Remove shipment ${i + 1}`} title="Remove this shipment">
+                                  <i className="ti ti-trash" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -333,7 +343,7 @@ export function NewCredit() {
                       <tfoot>
                         <tr>
                           <td className="fw-semibold">Total</td>
-                          <td colSpan={f.docs.length + 2}>
+                          <td colSpan={(single ? 0 : f.docs.length) + 2}>
                             <Amount value={total} token={token} className="fw-semibold" />
                             {short && <span className="text-warning fs-12 ms-2">More than your balance</span>}
                           </td>
@@ -366,7 +376,7 @@ export function NewCredit() {
               )}
 
               {step === 3 && (
-                <Review f={{ ...f, expiry }} token={token} total={total} amounts={amounts} exporterName={exporterName} pricing={pricing} partnerFee={partner ? { name: brand.name, bps: brand.integratorFeeBps } : null} />
+                <Review f={{ ...f, expiry, tranches }} token={token} total={total} amounts={amounts} exporterName={exporterName} pricing={pricing} partnerFee={partner ? { name: brand.name, bps: brand.integratorFeeBps } : null} />
               )}
 
               {(shown.length > 0 || (step === 3 && (sdkErrors.length > 0 || problems.some((p) => p.length)))) && (
