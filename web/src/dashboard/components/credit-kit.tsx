@@ -30,7 +30,9 @@ export type EventCategory = "opened" | "documents" | "payments" | "financing" | 
 
 export type Described = { text: string; icon: string; category: EventCategory; actor?: string; creditId?: bigint };
 
-const money = (v: unknown, c?: CreditRow) => `${amount(v as bigint)} ${c ? tokenSymbol(c.token) : ""}`.trim();
+// sub-cent amounts (a 0.25% fee on a small tranche) keep 4 decimals instead of reading 0.00
+const money = (v: unknown, c?: CreditRow) =>
+  `${amount(v as bigint, 6, (v as bigint) > 0n && (v as bigint) < 10_000n ? 4 : 2)} ${c ? tokenSymbol(c.token) : ""}`.trim();
 
 /** One event in a sentence. `credits` resolves refs and tokens; `offers` resolves offer ids. Returns null for internal noise. */
 export function describe(
@@ -193,7 +195,7 @@ export function Stepper({ steps, reveal, now }: { steps: Step[]; reveal?: number
 export function CreditStyles() {
   return (
     <style>{`
-.credit-ev-icon { width: 28px; height: 28px; flex: none; border-radius: 50%; background: var(--credoc-paper); display: inline-flex; align-items: center; justify-content: center; color: #191919; font-size: 15px; }
+.credit-ev-icon { width: 28px; height: 28px; flex: none; border-radius: 50%; background: var(--credoc-paper); display: inline-flex; align-items: center; justify-content: center; color: var(--credoc-ink); font-size: 15px; }
 .credit-stepper { display: flex; gap: 0; }
 .credit-stepper li { flex: 1; position: relative; min-width: 0; padding-right: 8px; }
 .credit-stepper li::before { content: ""; position: absolute; top: 13px; left: 30px; right: 4px; height: 1px; background: var(--osen-border-color); }

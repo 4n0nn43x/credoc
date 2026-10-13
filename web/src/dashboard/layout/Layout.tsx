@@ -6,6 +6,7 @@ import { useBrand } from "../../shared/brand";
 import { ThemeToggle } from "../../shared/ThemeToggle";
 import { CREDOC_ADDRESS, chain, explorerAddress } from "../../shared/config";
 import { amount, shortHex } from "../../shared/format";
+import { useAdmin } from "../lib/admin";
 import { pendingActions } from "../lib/model";
 import { useStore } from "../lib/store";
 import { useWallet } from "../lib/wallet";
@@ -36,6 +37,8 @@ const NAV: { title: string; items: { to: string; icon: string; label: string; ba
   },
   { title: "Account", items: [{ to: "/plans", icon: "ti-crown", label: "Plans" }] },
 ];
+/** Shown only to a signed-in admin session (lib/admin.ts). */
+const ADMIN_NAV: (typeof NAV)[number] = { title: "Admin", items: [{ to: "/admin", icon: "ti-shield-lock", label: "Admin" }] };
 
 /** Osen sizes the sidebar from the window width; mirror its breakpoints without its jQuery. */
 function useSidenavSize() {
@@ -54,6 +57,7 @@ function useSidenavSize() {
 
 function Sidenav({ actionCount, close }: { actionCount: number; close: () => void }) {
   const brand = useBrand();
+  const admin = useAdmin().status === "admin";
   return (
     <div className="sidenav-menu">
       <NavLink to="/" className="logo px-4" onClick={close}>
@@ -66,7 +70,7 @@ function Sidenav({ actionCount, close }: { actionCount: number; close: () => voi
       </button>
       <div className="credoc-sidenav-body d-flex flex-column overflow-auto">
         <ul className="side-nav">
-          {NAV.flatMap((section) => [
+          {(admin ? [...NAV, ADMIN_NAV] : NAV).flatMap((section) => [
             <li key={section.title} className="side-nav-title mt-2">
               {section.title}
             </li>,

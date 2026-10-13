@@ -28,7 +28,7 @@ function add(m: Map<string, bigint>, token: string, v: bigint) {
   m.set(token, (m.get(token) ?? 0n) + v);
 }
 
-function Kpi({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
+export function Kpi({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
   return (
     <div className="col-sm-6 col-xl-3">
       <div className="card h-100">

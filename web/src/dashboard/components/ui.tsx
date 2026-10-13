@@ -50,8 +50,8 @@ export const tokenSymbol = (token: string) =>
   sameAddress(token, ARC.usdc) ? "USDC" : sameAddress(token, ARC.eurc) ? "EURC" : "TOKEN";
 
 /** "120,000.00 USDC": whole units prominent, cents and currency muted, tabular digits. */
-export function Amount({ value, token, serif, className = "" }: { value: bigint; token?: string; serif?: boolean; className?: string }) {
-  const { whole, cents } = amountParts(value);
+export function Amount({ value, token, serif, className = "", places }: { value: bigint; token?: string; serif?: boolean; className?: string; places?: number }) {
+  const { whole, cents } = amountParts(value, places);
   const ccy = token ? tokenSymbol(token) : null;
   return (
     <span className={`amount num ${serif ? "font-serif" : ""} ${className}`} title={ccy === "USDC" ? "USDC: digital dollar issued by Circle, redeemable 1:1" : ccy === "EURC" ? "EURC: digital euro issued by Circle, redeemable 1:1" : undefined}>

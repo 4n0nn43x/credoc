@@ -14,6 +14,7 @@ import { Identity } from "./pages/Identity";
 import { Activity } from "./pages/Activity";
 import { Login } from "./pages/Login";
 import { Plans } from "./pages/Plans";
+import { Admin } from "./pages/Admin";
 import { useWallet } from "./lib/wallet";
 import { trackPageView } from "../shared/track";
 import { useEffect } from "react";
@@ -67,6 +68,7 @@ export function App() {
                   <Route path="identity" element={<Identity />} />
                   <Route path="activity" element={<Activity />} />
                   <Route path="plans" element={<Plans />} />
+                  <Route path="admin" element={<Admin />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
               </Route>
