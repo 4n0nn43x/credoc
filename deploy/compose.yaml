@@ -11,11 +11,15 @@ services:
     networks: [edge]
     read_only: true
     tmpfs: [/tmp]
+    volumes: [data:/data]             # analytics database (SQLite), kept across deploys
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     mem_limit: 256m
     pids_limit: 64
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+volumes:
+  data:
 
 networks:
   edge:

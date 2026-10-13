@@ -15,6 +15,15 @@ import { Activity } from "./pages/Activity";
 import { Login } from "./pages/Login";
 import { Plans } from "./pages/Plans";
 import { useWallet } from "./lib/wallet";
+import { trackPageView } from "../shared/track";
+import { useEffect } from "react";
+
+/** One first-party page view per route (see shared/track.ts). */
+function PageViews() {
+  const { pathname } = useLocation();
+  useEffect(trackPageView, [pathname]);
+  return null;
+}
 
 /** Private pages need a connected wallet; the previous session is restored before deciding, so no flash of login. */
 function RequireWallet() {
@@ -42,6 +51,7 @@ export function App() {
       <StoreProvider>
         <TxProvider>
           <HashRouter>
+            <PageViews />
             <Routes>
               <Route path="login" element={<Login />} />
               <Route element={<Layout />}>
