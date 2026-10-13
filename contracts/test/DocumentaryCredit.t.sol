@@ -52,7 +52,7 @@ contract DocumentaryCreditTest is Test {
         IERC20[] memory toks = new IERC20[](2);
         toks[0] = usdc;
         toks[1] = eurc;
-        dc = new DocumentaryCredit(toks, IIdentityRegistry(address(reg)), IReputationRegistry(address(reg)));
+        dc = new DocumentaryCredit(toks, IIdentityRegistry(address(reg)), IReputationRegistry(address(reg)), address(this), 0);
         expiry = uint64(block.timestamp + 30 days);
 
         for (uint256 i; i < 3; i++) {
@@ -514,12 +514,12 @@ contract DocumentaryCreditTest is Test {
 
         vm.prank(stranger);
         vm.expectRevert(DocumentaryCredit.Unauthorized.selector);
-        dc.linkBeneficiaryAgent(id, 2);
+        dc.linkAgent(2);
         vm.prank(exporter);
         vm.expectRevert(DocumentaryCredit.Unauthorized.selector);
-        dc.linkBeneficiaryAgent(id, 3); // not its agent
+        dc.linkAgent(3); // not its agent
         vm.prank(exporter);
-        dc.linkBeneficiaryAgent(id, 2);
+        dc.linkAgent(2);
 
         _presentBoth(id, 0);
         assertEq(reg.count(), 3);
@@ -550,7 +550,7 @@ contract DocumentaryCreditTest is Test {
     function test_reputation_failureNeverBlocksMoney() public {
         uint256 id = _open(1000e6, 0);
         vm.prank(exporter);
-        dc.linkBeneficiaryAgent(id, 2);
+        dc.linkAgent(2);
         reg.setBroken(true);
         vm.prank(forwarder);
         dc.present(id, 0, 0, keccak256("bl"));
@@ -570,7 +570,7 @@ contract DocumentaryCreditTest is Test {
         IERC20[] memory toks = new IERC20[](1);
         toks[0] = usdc;
         DocumentaryCredit bare =
-            new DocumentaryCredit(toks, IIdentityRegistry(address(0)), IReputationRegistry(address(0)));
+            new DocumentaryCredit(toks, IIdentityRegistry(address(0)), IReputationRegistry(address(0)), address(this), 0);
         vm.startPrank(importer);
         usdc.approve(address(bare), type(uint256).max);
         DocumentaryCredit.OpenParams memory p = _params(1000e6, 0);
@@ -647,7 +647,7 @@ contract DocumentaryCreditTest is Test {
         vm.prank(importer);
         uint256 id = dc.open(p, "");
         vm.prank(exporter);
-        dc.linkBeneficiaryAgent(id, 2);
+        dc.linkAgent(2);
         reg.setBurn(true);
         vm.prank(forwarder);
         dc.present(id, 0, 0, keccak256("bl"));
@@ -662,7 +662,7 @@ contract DocumentaryCreditTest is Test {
     function test_review_M1_cannotSkipFeedbackByStarvingGas() public {
         uint256 id = _open(1000e6, 0);
         vm.prank(exporter);
-        dc.linkBeneficiaryAgent(id, 2);
+        dc.linkAgent(2);
         vm.warp(expiry + 1);
         vm.expectRevert(DocumentaryCredit.InsufficientGas.selector);
         dc.reclaim{gas: 200_000}(id);
@@ -676,9 +676,9 @@ contract DocumentaryCreditTest is Test {
         uint256 id = _open(1000e6, 0);
         reg.setOwner(9, exporter);
         vm.startPrank(exporter);
-        dc.linkBeneficiaryAgent(id, 2);
+        dc.linkAgent(2);
         vm.expectRevert(DocumentaryCredit.AlreadyLinked.selector);
-        dc.linkBeneficiaryAgent(id, 9);
+        dc.linkAgent(9);
         vm.stopPrank();
     }
 
@@ -686,7 +686,7 @@ contract DocumentaryCreditTest is Test {
     function test_review_M2_cancelRecordedPerTranche() public {
         uint256 id = _open(600e6, 400e6);
         vm.prank(exporter);
-        dc.linkBeneficiaryAgent(id, 2);
+        dc.linkAgent(2);
         vm.prank(exporter);
         dc.cancel(id);
         assertEq(reg.count(), 2);
@@ -698,7 +698,7 @@ contract DocumentaryCreditTest is Test {
     function test_review_M2_waivedSettlementTaggedApart() public {
         uint256 id = _open(1000e6, 0);
         vm.prank(exporter);
-        dc.linkBeneficiaryAgent(id, 2);
+        dc.linkAgent(2);
         vm.prank(forwarder);
         dc.present(id, 0, 0, keccak256("bl"));
         vm.prank(importer);
@@ -730,5 +730,89 @@ contract DocumentaryCreditTest is Test {
         DocumentaryCredit.OpenParams memory p = _params(1e6, 0);
         p.beneficiary = address(dc);
         _expectBad(p);
+    }
+
+    // ------------------------------------------------------------ settlement fee
+
+    function test_fee_takenOnSettlementOnly_andSentToTreasury() public {
+        dc.setFee(25);
+        address treasury = makeAddr("treasury");
+        dc.setTreasury(treasury);
+        uint256 id = _open(6000e6, 4000e6);
+        _presentBoth(id, 0);
+        assertEq(usdc.balanceOf(exporter), 6000e6 - 15e6, "0.25% kept");
+        assertEq(dc.fees(usdc), 15e6);
+        vm.warp(expiry + 1);
+        dc.reclaim(id);
+        assertEq(usdc.balanceOf(importer), 1_000_000e6 - 6000e6, "refunds are free");
+        vm.prank(stranger);
+        dc.withdrawFees(usdc);
+        assertEq(usdc.balanceOf(treasury), 15e6);
+        assertEq(usdc.balanceOf(address(dc)), 0);
+        vm.expectRevert(DocumentaryCredit.NothingOwed.selector);
+        dc.withdrawFees(usdc);
+    }
+
+    function test_fee_fixedPerCredit_cappedAndOwnerOnly() public {
+        dc.setFee(25);
+        uint256 id = _open(1000e6, 0);
+        dc.setFee(100);
+        _presentBoth(id, 0);
+        assertEq(usdc.balanceOf(exporter), 1000e6 - 2.5e6, "rate of the credit, not the new one");
+        vm.expectRevert(DocumentaryCredit.BadParams.selector);
+        dc.setFee(101);
+        vm.prank(stranger);
+        vm.expectRevert();
+        dc.setFee(0);
+        vm.prank(stranger);
+        vm.expectRevert();
+        dc.setTreasury(stranger);
+    }
+
+    // ------------------------------------------------------------ audit 2026-10-13
+
+    /// An exporter cannot keep failing credits out of its record by linking per credit: the link is per address and
+    /// covers credits opened before it.
+    function test_audit_linkPerAddressCoversEveryCredit() public {
+        uint256 id = _open(1000e6, 0);
+        assertEq(dc.getCredit(id).beneficiaryAgent, 0);
+        vm.prank(exporter);
+        dc.linkAgent(2);
+        assertEq(dc.getCredit(id).beneficiaryAgent, 3, "agentId + 1");
+        vm.warp(expiry + 1);
+        dc.reclaim(id);
+        (uint256 agent,,,,, string memory t2,) = reg.feedbacks(0);
+        assertEq(agent, 2);
+        assertEq(t2, "expired");
+    }
+
+    /// Making this contract an operator of its own agent turns every entry into a refused self-feedback: the refusal
+    /// is now counted, so the dodge leaves a public trace.
+    function test_audit_refusedEntriesAreCounted() public {
+        uint256 id = _open(1000e6, 0);
+        vm.prank(exporter);
+        dc.linkAgent(2);
+        reg.setOwner(2, address(dc));
+        vm.warp(expiry + 1);
+        dc.reclaim(id);
+        assertEq(reg.count(), 0);
+        assertEq(dc.skippedFeedback(2), 1);
+    }
+
+    /// An offer cannot outlive the credit, and an extension agreed after the offer makes it stale.
+    function test_audit_offerBoundToExpiry() public {
+        uint256 id = _open(1000e6, 0);
+        vm.startPrank(financier);
+        vm.expectRevert(DocumentaryCredit.BadParams.selector);
+        dc.makeOffer(id, 900e6, expiry + 1);
+        uint256 off = dc.makeOffer(id, 900e6, expiry);
+        vm.stopPrank();
+        vm.prank(importer);
+        dc.amendExpiry(id, expiry + 30 days);
+        vm.prank(exporter);
+        dc.amendExpiry(id, expiry + 30 days);
+        vm.prank(exporter);
+        vm.expectRevert(DocumentaryCredit.StaleOffer.selector);
+        dc.acceptOffer(off);
     }
 }

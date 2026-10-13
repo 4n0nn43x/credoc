@@ -225,8 +225,10 @@ function OfferDrawer({
   } catch {
     units = null;
   }
-  const rate = units && units > 0n ? (Number(c.outstanding) / Number(units) - 1) * (365 / days) : 0;
-  const ret = units ? c.outstanding - units : 0n;
+  // what the financier collects: the outstanding amount less Credoc's settlement fee
+  const net = c.outstanding - (c.outstanding * BigInt(c.feeBps)) / 10_000n;
+  const rate = units && units > 0n ? (Number(net) / Number(units) - 1) * (365 / days) : 0;
+  const ret = units ? net - units : 0n;
   const vd = Number(validDays);
   const problem =
     isPayee ? "You are the current payee of this credit."
@@ -234,6 +236,7 @@ function OfferDrawer({
     : units > c.outstanding ? "The price cannot exceed the outstanding amount."
     : balance !== null && units > balance ? `Not enough ${ccy} in this wallet.`
     : !(vd > 0 && vd <= 30) ? "Validity is 1 to 30 days."
+    : now >= Number(c.expiry) ? "This credit has expired."
     : null;
 
   useEffect(() => {
@@ -294,7 +297,8 @@ function OfferDrawer({
 
           <div className="bg-light rounded-3 p-3 my-3 fs-14">
             You pay <Amount value={units ?? 0n} token={c.token} className="fw-semibold text-dark" /> today, you collect{" "}
-            <Amount value={c.outstanding} token={c.token} className="fw-semibold text-dark" /> on delivery: a return of{" "}
+            <Amount value={net} token={c.token} className="fw-semibold text-dark" /> on delivery
+            {c.feeBps > 0 && <> (after the {c.feeBps / 100}% Credoc fee)</>}: a return of{" "}
             <Amount value={ret > 0n ? ret : 0n} token={c.token} className="fw-semibold text-dark" /> (<span className="num">{(rate * 100).toFixed(1)}%</span> annualized to expiry).
           </div>
 
@@ -317,7 +321,7 @@ function OfferDrawer({
               disabled={!!problem}
               onClick={() => {
                 setBusy(true);
-                void submit(units!, BigInt(now + Math.round(vd * DAY))).finally(() => setBusy(false));
+                void submit(units!, BigInt(Math.min(now + Math.round(vd * DAY), Number(c.expiry)))).finally(() => setBusy(false));
               }}
             >
               Authorize and offer

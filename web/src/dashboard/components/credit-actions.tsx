@@ -292,12 +292,13 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
     sections.push(
       <Section key="identity" title="Link your ERC-8004 identity">
         <p className="fs-13 text-muted mb-2">
-          Each settlement then writes a verifiable entry to your track record, which financiers use to price your receivables. No
-          identity yet? <Link to="/identity">Create one on the Track record page</Link>.
+          Once for your address: every credit where you are the exporter, this one included, then writes verifiable entries to your
+          track record, which financiers use to price your receivables. No identity yet?{" "}
+          <Link to="/identity">Create one on the Track record page</Link>.
         </p>
         <div className="d-flex gap-2">
           <input className="form-control form-control-sm num" style={{ maxWidth: 140 }} inputMode="numeric" placeholder="Agent id" value={agentId} onChange={(e) => setAgentId(e.target.value.replace(/\D/g, ""))} aria-label="ERC-8004 agent id" />
-          <button type="button" className={`btn btn-sm ${btn("identity")}`} disabled={!agentId} onClick={() => run("Link identity", (x) => x.linkBeneficiaryAgent(id, BigInt(agentId)))}>
+          <button type="button" className={`btn btn-sm ${btn("identity")}`} disabled={!agentId} onClick={() => run("Link identity", (x) => x.linkAgent(BigInt(agentId)))}>
             Link
           </button>
         </div>

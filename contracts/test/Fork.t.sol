@@ -59,7 +59,9 @@ contract ForkTest is Test {
         toks[0] = USDC;
         toks[1] = EURC;
         dc = new DocumentaryCredit(
-            toks, IIdentityRegistry(ArcMainnet.IDENTITY_REGISTRY), IReputationRegistry(ArcMainnet.REPUTATION_REGISTRY)
+            toks, IIdentityRegistry(ArcMainnet.IDENTITY_REGISTRY), IReputationRegistry(ArcMainnet.REPUTATION_REGISTRY),
+            address(this),
+            0
         );
         vm.deal(importer, 50e18); // native USDC: 18 decimals, mirrored as 50e6 on the ERC-20 interface
         vm.prank(exporter);
@@ -96,7 +98,7 @@ contract ForkTest is Test {
         assertEq(USDC.balanceOf(address(dc)), 10e6);
 
         vm.prank(exporter);
-        dc.linkBeneficiaryAgent(id, exporterAgent);
+        dc.linkAgent(exporterAgent);
 
         uint256 dl = block.timestamp + 1 hours;
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(fwdKey, dc.presentationDigest(id, 0, 0, keccak256("bl"), dl));
@@ -125,7 +127,7 @@ contract ForkTest is Test {
         uint256 id = dc.open(_params(EURC, 20e6), "");
         vm.stopPrank();
         vm.prank(exporter);
-        dc.linkBeneficiaryAgent(id, exporterAgent);
+        dc.linkAgent(exporterAgent);
         vm.warp(block.timestamp + 8 days);
         dc.reclaim(id);
         assertEq(EURC.balanceOf(importer), 20e6);

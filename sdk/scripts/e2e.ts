@@ -69,7 +69,7 @@ async function main() {
   const deployHash = await importerW.deployContract({
     abi: documentaryCreditAbi,
     bytecode: documentaryCreditBytecode,
-    args: [[ARC.usdc, ARC.eurc], ARC.identityRegistry, ARC.reputationRegistry],
+    args: [[ARC.usdc, ARC.eurc], ARC.identityRegistry, ARC.reputationRegistry, importerW.account.address, 25],
   });
   const address = (await pub.waitForTransactionReceipt({ hash: deployHash })).contractAddress!;
   console.log("contract", address);
@@ -109,7 +109,7 @@ async function main() {
   const memoLog = openReceipt.logs.find((l) => l.address.toLowerCase() === ARC.memo.toLowerCase() && l.topics.length === 4);
   console.log(`credit #${id} opened, locked ${usd(await bal(address))}, memoId indexed: ${memoLog?.topics[3] === keccak256(stringToHex(ref))}`);
 
-  await exporter.linkBeneficiaryAgent(id, exporterAgent);
+  await exporter.linkAgent(exporterAgent); // once for its address: every credit to it now counts
 
   step("Financier prices the receivable from the exporter's onchain track record and makes an offer");
   const rep0 = await financier.reputation(exporterAgent);
@@ -155,7 +155,6 @@ async function main() {
     },
     "PO-2026-0043",
   );
-  await exporter.linkBeneficiaryAgent(id2, exporterAgent);
   await testClient.increaseTime({ seconds: 8 * 86400 });
   await testClient.mine({ blocks: 1 });
   const impBefore = await bal(importerW.account.address);

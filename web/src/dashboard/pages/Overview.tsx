@@ -56,7 +56,7 @@ export function Overview() {
       if (c.status === 1 && sameAddress(c.applicant, me)) add(locked, c.token, c.outstanding);
       if (c.status === 1 && sameAddress(c.payee, me)) add(receivable, c.token, c.outstanding);
       for (const e of c.events)
-        if (e.name === "TrancheSettled" && sameAddress(e.args.payee as string, me)) add(paid, c.token, e.args.amount as bigint);
+        if (e.name === "TrancheSettled" && sameAddress(e.args.payee as string, me)) add(paid, c.token, (e.args.amount as bigint) - ((e.args.fee as bigint | undefined) ?? 0n));
     }
     return { locked, receivable, paid };
   }, [credits, me]);

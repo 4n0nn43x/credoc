@@ -135,7 +135,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
       await Promise.all(
         [...offerIds].map(async (id) => {
-          const [creditId, financier, price, forOutstanding, validUntil, open] = await publicClient.readContract({
+          const [creditId, financier, price, forOutstanding, , validUntil, open] = await publicClient.readContract({
             address: CREDOC_ADDRESS!,
             abi: documentaryCreditAbi,
             functionName: "offers",

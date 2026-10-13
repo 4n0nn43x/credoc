@@ -19,7 +19,7 @@ Any financier can offer to buy the remaining proceeds of a credit at a discount 
 
 ### A portable track record (ERC-8004)
 
-Importers and exporters can link an [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) identity, once per credit. The contract writes to the canonical ERC-8004 Reputation Registry on Arc:
+Importers name an [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) identity when they open a credit. Exporters link one to their address, once (`linkAgent`): every credit where they are the beneficiary, open or future, then counts, so nobody can pick which credits enter their record. The contract writes to the canonical ERC-8004 Reputation Registry on Arc:
 
 | Event | Entry (`tag1 = credoc`) |
 |---|---|
@@ -31,7 +31,15 @@ Importers and exporters can link an [ERC-8004](https://eips.ethereum.org/EIPS/ei
 
 The registry is open to anyone, so it can be spammed. But `getSummary` takes the list of trusted clients. Reading it with `[this contract]` only counts entries written during settlements through this contract. Financiers then price the next receivable from that history (see `quoteAssignment` in the SDK).
 
-Registry calls get a fixed gas budget and cannot revert a payment. A caller cannot starve them on purpose either: the transaction reverts instead of silently skipping an entry.
+Registry calls get a fixed gas budget and cannot revert a payment. A caller cannot starve them on purpose either: the transaction reverts instead of silently skipping an entry. An entry the registry refuses (for example because the exporter made this contract an operator of its own identity, which the registry treats as self-feedback) is counted in `skippedFeedback`, and the SDK prices such an exporter as having no history.
+
+## Business model
+
+Credoc takes **0.25% of each settled tranche**, deducted from the payee's proceeds (the exporter, or the financier who bought the receivable). Refunds at expiry or cancellation are free: the importer pays nothing if the goods never ship. A bank letter of credit typically costs 0.75% to 1.5% plus fixed minimums.
+
+- The rate is fixed when a credit opens. The owner can change it for future credits only, and never above the 1% hard cap (`MAX_FEE_BPS`).
+- Fees accrue in the contract per token and go to the treasury address through `withdrawFees`, which anyone can call.
+- Next: subscriptions for attestors (multi-client dashboard, API, batch signing), importers (templates, teams, accounting export) and financiers (receivables feed, pricing API), then white-label licences for fintechs and banks.
 
 ## Why Arc
 
@@ -56,7 +64,7 @@ web/         Landing page and dashboard (Vite, React), gasless relayer (serverle
 
 ```bash
 cd contracts && npm install
-forge test                      # unit (33, incl. fuzz) + invariant (2) tests; fork tests skip outside Arc
+forge test                      # unit (38, incl. fuzz) + invariant (2) tests; fork tests skip outside Arc
 ```
 
 Fork tests run against real Arc mainnet state (native USDC, EURC, ERC-8004, Memo, Multicall3From). They need [Arc Foundry](https://docs.arc.io/arc/tutorials/install-arc-foundry), because stock Foundry cannot execute Arc's USDC precompile:
@@ -129,8 +137,10 @@ It prints a signed presentation that anyone can relay. Add `--relay` with `RELAY
 
 ```bash
 cd contracts
-arc-forge script script/Deploy.s.sol --rpc-url arc --account <keystore> --broadcast
+TREASURY=0x... arc-forge script script/Deploy.s.sol --rpc-url arc --account <keystore> --broadcast
 ```
+
+The deployer becomes the owner of the fee settings. `FEE_BPS` defaults to 25 (0.25%).
 
 The deployment uses about 4.3M gas, roughly 0.09 to 0.17 USDC.
 
@@ -144,7 +154,7 @@ The deployment uses about 4.3M gas, roughly 0.09 to 0.17 USDC.
 
 ## Security review
 
-An independent review found one high, two medium and four low issues ([report](docs/security-review.md), written against the first version). All are fixed and each has a regression test (`test_review_*`). The exploit proofs of concept from the review fail against the current contract.
+An independent review found one high, two medium and four low issues ([report](docs/security-review.md), written against the first version). All are fixed and each has a regression test (`test_review_*`). The exploit proofs of concept from the review fail against the current contract. A second pass before the mainnet deployment found two more ways to keep failures out of a track record and two ways to turn an offer against its financier; all four are fixed (`test_audit_*`, same report).
 
 ## License
 

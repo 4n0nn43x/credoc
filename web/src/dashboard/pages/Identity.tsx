@@ -196,20 +196,20 @@ export function Identity() {
 
           {unlinked.length > 0 && ids.length > 0 && (
             <Card title="Credits not counted yet">
-              <p className="text-muted fs-13">Link your identity to these credits so their deliveries count. Once per credit.</p>
-              <ul className="list-group">
+              <p className="text-muted fs-13">Link your identity to your address, once, and these credits and every later one count.</p>
+              <ul className="list-group mb-3">
                 {unlinked.map((c) => (
-                  <li key={String(c.id)} className="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+                  <li key={String(c.id)} className="list-group-item">
                     <Link to={`/credits/${c.id}`} className="text-dark fw-medium">{c.ref || `#${c.id}`}</Link>
-                    <SignButton
-                      className="btn btn-sm btn-outline-dark"
-                      onClick={() => void run(`Link identity #${ids[0]} to ${c.ref}`, (x) => x.linkBeneficiaryAgent(c.id, ids[0]!)).then(() => setVersion((v) => v + 1))}
-                    >
-                      Link #{String(ids[0])}
-                    </SignButton>
                   </li>
                 ))}
               </ul>
+              <SignButton
+                className="btn btn-sm btn-dark"
+                onClick={() => void run(`Link identity #${ids[0]}`, (x) => x.linkAgent(ids[0]!)).then(() => setVersion((v) => v + 1))}
+              >
+                Link #{String(ids[0])} to this address
+              </SignButton>
             </Card>
           )}
         </div>

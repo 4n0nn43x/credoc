@@ -54,14 +54,6 @@ export function describe(
         actor: a.applicant as string,
         creditId,
       };
-    case "BeneficiaryAgentLinked":
-      return {
-        text: `${c ? who(c.beneficiary, me) : "The exporter"} linked ERC-8004 identity #${String(a.agentId)} to ${ref}`,
-        icon: "ti-id-badge-2",
-        category: "opened",
-        actor: c?.beneficiary,
-        creditId,
-      };
     case "DocumentPresented":
       return {
         text: `${who(a.attestor, me)} presented the ${docName(a.docType)} for ${ref}, ${ship}`,
@@ -80,7 +72,7 @@ export function describe(
       };
     case "TrancheSettled":
       return {
-        text: `${money(a.amount, c)} paid to ${who(a.payee, me)} for ${ref}, ${ship}`,
+        text: `${money((a.amount as bigint) - ((a.fee as bigint | undefined) ?? 0n), c)} paid to ${who(a.payee, me)} for ${ref}, ${ship}${a.fee ? ` (Credoc fee ${money(a.fee, c)})` : ""}`,
         icon: "ti-arrow-down-left",
         category: "payments",
         actor: a.payee as string,

@@ -160,6 +160,7 @@ export type CreditView = {
   token: Address;
   expiry: bigint;
   status: Status;
+  feeBps: number; // Credoc's settlement fee for this credit, fixed when it opened
   total: bigint;
   outstanding: bigint;
   applicantAgent: bigint | null;
@@ -181,6 +182,7 @@ export type Reputation = {
   waived: number; // tranches settled only thanks to applicant waivers (not counted as deliveries)
   expired: number; // tranches refunded at expiry
   cancelled: number; // tranches renounced by the payee
+  skipped: number; // entries the registry refused (e.g. the agent made this contract its operator): treat as a red flag
   onTimeRate: number | null; // delivered / (delivered + expired + cancelled), null without history
   averageTicket: bigint | null; // average settled tranche in the chosen token, token units
 };
@@ -236,7 +238,8 @@ export function quoteAssignment(args: {
   const r = args.reputation;
   // trust grows with on-time rate and with history depth (saturates around 20 deliveries)
   const history = r ? r.delivered + r.expired + r.cancelled : 0;
-  const trust = r && r.onTimeRate !== null ? r.onTimeRate * Math.min(1, history / 20) : 0;
+  // an exporter whose entries were refused may be hiding expiries: no trust at all
+  const trust = r && r.onTimeRate !== null && r.skipped === 0 ? r.onTimeRate * Math.min(1, history / 20) : 0;
   const annualRate = base + maxPremium * (1 - trust);
   const days = Math.max(0, args.daysToExpiry);
   // fixed-point at 1e9 to stay in bigint arithmetic
@@ -364,7 +367,8 @@ export class Credoc {
     return { id: ev.args.creditId, hash };
   }
 
-  linkBeneficiaryAgent = (id: bigint, agentId: bigint) => this.send("linkBeneficiaryAgent", [id, agentId]);
+  /** Bind the connected wallet to its ERC-8004 identity, once: every credit where it is the exporter then counts. */
+  linkAgent = (agentId: bigint) => this.send("linkAgent", [agentId]);
 
   // ---- presentation
 
@@ -433,6 +437,7 @@ export class Credoc {
       token: Address;
       expiry: bigint;
       status: number;
+      feeBps: number;
       total: bigint;
       outstanding: bigint;
       applicantAgent: bigint;
@@ -506,12 +511,13 @@ export class Credoc {
         functionName: "getSummary",
         args: [agentId, [this.address], "credoc", tag2],
       });
-    const [d, w, e, c, v] = await Promise.all([
+    const [d, w, e, c, v, skipped] = await Promise.all([
       q("delivered"),
       q("waived"),
       q("expired"),
       q("cancelled"),
       q(`volume-${symbol}`),
+      this.read<bigint>("skippedFeedback", [agentId]),
     ]);
     const delivered = Number(d[0]);
     const expired = Number(e[0]);
@@ -522,6 +528,7 @@ export class Credoc {
       waived: Number(w[0]),
       expired,
       cancelled,
+      skipped: Number(skipped),
       onTimeRate: judged === 0 ? null : delivered / judged,
       averageTicket: v[0] === 0n ? null : BigInt(v[1]),
     };
