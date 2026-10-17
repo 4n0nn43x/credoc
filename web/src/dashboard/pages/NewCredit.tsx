@@ -200,7 +200,7 @@ export function NewCredit() {
                     <button
                       type="button"
                       className={`nav-link rounded-0 py-3 w-100 ${i === step ? "fw-semibold text-dark" : "text-muted"}`}
-                      style={{ borderBottom: i === step ? "2px solid #191919" : "2px solid transparent" }}
+                      style={{ borderBottom: i === step ? "2px solid var(--credoc-ink)" : "2px solid transparent" }}
                       onClick={() => go(i)}
                       aria-current={i === step ? "step" : undefined}
                     >
