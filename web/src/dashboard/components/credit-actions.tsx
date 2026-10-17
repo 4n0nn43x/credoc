@@ -16,7 +16,7 @@ const MAX_TENOR = 730 * DAY;
 
 /** Latest expiry proposal still binding: the contract drops a proposal when its proposer sells the proceeds. */
 export function pendingExpiry(c: CreditRow) {
-  const last = c.events.filter((e) => e.name === "ExpiryProposed" || e.name === "ExpiryAmended").at(-1);
+  const last = c.events.filter((e) => e.name === "ExpiryProposed" || e.name === "ExpiryAmended" || e.name === "ExpiryProposalWithdrawn").at(-1);
   if (last?.name !== "ExpiryProposed") return null;
   const proposer = last.args.proposer as string;
   const value = last.args.newExpiry as bigint;
@@ -217,6 +217,11 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
         {proposalForMe && (
           <button type="button" className={`btn btn-sm ${btn("extension")} me-2 mb-2`} disabled={busy !== null} onClick={() => act("accept-expiry", "Accept the new expiry", (x) => x.amendExpiry(id, pending!.value))}>
             {spin("accept-expiry")}Accept new expiry
+          </button>
+        )}
+        {pending && !proposalForMe && sameAddress(pending.proposer, me) && (
+          <button type="button" className="btn btn-sm btn-outline-dark me-2 mb-2" disabled={busy !== null} onClick={() => act("withdraw-expiry", "Withdraw the proposal", (x) => x.withdrawExpiryProposal(id))}>
+            {spin("withdraw-expiry")}Withdraw proposal
           </button>
         )}
         <div className="d-flex gap-2 align-items-center flex-wrap">

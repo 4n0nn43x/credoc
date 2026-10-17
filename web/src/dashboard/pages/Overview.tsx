@@ -142,7 +142,7 @@ export function Overview() {
         }
     return { delivered, expired };
   }, [credits, me]);
-  const track = rep ? { delivered: rep.delivered, expired: rep.expired + rep.cancelled } : derived;
+  const track = rep ? { delivered: rep.delivered, expired: rep.expired + rep.cancelled + rep.assigneeCancelled } : derived;
 
   const todo = pendingActions(credits, offers, me, t);
 

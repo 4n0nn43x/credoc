@@ -96,7 +96,7 @@ export function pendingActions(credits: CreditRow[], offers: OfferRow[], me: Add
     if (c.status !== 1) continue;
     const roles = rolesOf(c, me, offers);
     const expired = now > Number(c.expiry);
-    const pendingProposal = c.events.filter((e) => e.name === "ExpiryProposed" || e.name === "ExpiryAmended").at(-1);
+    const pendingProposal = c.events.filter((e) => e.name === "ExpiryProposed" || e.name === "ExpiryAmended" || e.name === "ExpiryProposalWithdrawn").at(-1);
     const proposalOpen =
       pendingProposal?.name === "ExpiryProposed" && !sameAddress(pendingProposal.args.proposer as string, me);
     if (roles.has("importer")) {

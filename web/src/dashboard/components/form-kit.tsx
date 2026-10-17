@@ -156,8 +156,9 @@ export function recordFacts(r: Reputation | undefined, linked: boolean): string 
   if (!r) return "Loading…";
   const parts = [`${r.delivered} delivered`, `${r.expired} expired`];
   if (r.cancelled) parts.push(`${r.cancelled} cancelled`);
+  if (r.assigneeCancelled) parts.push(`${r.assigneeCancelled} cancelled by a buyer of the proceeds`);
   if (r.waived) parts.push(`${r.waived} waived`);
   if (r.skipped) parts.push(`${r.skipped} unrecorded`);
-  return r.delivered + r.expired + r.cancelled + r.waived + r.skipped === 0 ? "No history" : parts.join(", ");
+  return r.delivered + r.expired + r.cancelled + r.assigneeCancelled + r.waived + r.skipped === 0 ? "No history" : parts.join(", ");
 }
 

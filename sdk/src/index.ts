@@ -205,9 +205,10 @@ export type Reputation = {
   delivered: number; // tranches settled with every document presented by its attestor
   waived: number; // tranches settled only thanks to applicant waivers (not counted as deliveries)
   expired: number; // tranches refunded at expiry
-  cancelled: number; // tranches renounced by the payee
+  cancelled: number; // tranches renounced by the beneficiary while still payee
+  assigneeCancelled: number; // tranches renounced by whoever bought the proceeds, not by the beneficiary
   skipped: number; // entries the registry refused (e.g. the agent made this contract its operator): treat as a red flag
-  onTimeRate: number | null; // delivered / (delivered + expired + cancelled), null without history
+  onTimeRate: number | null; // delivered / (delivered + expired + cancelled + assigneeCancelled), null without history
   averageTicket: bigint | null; // average settled tranche in the chosen token, token units
 };
 
@@ -428,6 +429,7 @@ export class Credoc {
   reclaim = (id: bigint) => this.send("reclaim", [id]);
   cancel = (id: bigint) => this.send("cancel", [id]);
   amendExpiry = (id: bigint, newExpiry: bigint) => this.send("amendExpiry", [id, newExpiry]);
+  withdrawExpiryProposal = (id: bigint) => this.send("withdrawExpiryProposal", [id]);
   withdrawOwed = (token: Address) => this.send("withdrawOwed", [token]);
 
   // ---- assignment of proceeds
@@ -558,23 +560,26 @@ export class Credoc {
         functionName: "getSummary",
         args: [agentId, [this.address], "credoc", tag2],
       });
-    const [d, w, e, c, v, skipped] = await Promise.all([
+    const [d, w, e, c, ac, v, skipped] = await Promise.all([
       q("delivered"),
       q("waived"),
       q("expired"),
       q("cancelled"),
+      q("assignee-cancelled"),
       q(`volume-${symbol}`),
       this.read<bigint>("skippedFeedback", [agentId]),
     ]);
     const delivered = Number(d[0]);
     const expired = Number(e[0]);
     const cancelled = Number(c[0]);
-    const judged = delivered + expired + cancelled;
+    const assigneeCancelled = Number(ac[0]);
+    const judged = delivered + expired + cancelled + assigneeCancelled;
     return {
       delivered,
       waived: Number(w[0]),
       expired,
       cancelled,
+      assigneeCancelled,
       skipped: Number(skipped),
       onTimeRate: judged === 0 ? null : delivered / judged,
       averageTicket: v[0] === 0n ? null : BigInt(v[1]),

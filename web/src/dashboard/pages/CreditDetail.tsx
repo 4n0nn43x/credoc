@@ -421,7 +421,7 @@ function TrackRecord({ c }: { c: CreditRow }) {
             <span className="num">{rep.expired}</span>
           </Row>
           <Row k="Cancelled">
-            <span className="num">{rep.cancelled}</span>
+            <span className="num">{rep.cancelled + rep.assigneeCancelled}</span>
           </Row>
           <div className="fs-12 text-muted mt-2">Only entries written by this contract during settlements are counted.</div>
         </>

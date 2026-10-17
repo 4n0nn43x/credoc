@@ -66,7 +66,7 @@ function Passport({ id, version, roles }: { id: bigint; version: number; roles?:
               <Figure label="Delivered">{rec.usdc.delivered}</Figure>
               <Figure label="Waived">{rec.usdc.waived}</Figure>
               <Figure label="Expired">{rec.usdc.expired}</Figure>
-              <Figure label="Cancelled">{rec.usdc.cancelled}</Figure>
+              <Figure label="Cancelled">{rec.usdc.cancelled + rec.usdc.assigneeCancelled}</Figure>
               <Figure label="On time">{rec.usdc.onTimeRate === null ? "None yet" : `${Math.round(rec.usdc.onTimeRate * 100)}%`}</Figure>
               <div className="col-6 col-md-4">
                 <div className="micro-label mb-1">Average shipment</div>

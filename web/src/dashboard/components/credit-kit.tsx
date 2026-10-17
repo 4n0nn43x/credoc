@@ -110,6 +110,13 @@ export function describe(
         category: "opened",
         creditId,
       };
+    case "ExpiryProposalWithdrawn":
+      return {
+        text: `The expiry proposal on ${ref} was withdrawn`,
+        icon: "ti-calendar-x",
+        category: "opened",
+        creditId,
+      };
     case "OfferMade":
       return {
         text: `${who(a.financier, me)} offered ${money(a.price, c)} now for the proceeds of ${ref}`,

@@ -70,12 +70,12 @@ test("quoteAssignment discounts more for unknown exporters and longer tenors", (
   const proven = quoteAssignment({
     outstanding,
     daysToExpiry: 60,
-    reputation: { delivered: 40, waived: 0, expired: 0, cancelled: 0, skipped: 0, onTimeRate: 1, averageTicket: 1n },
+    reputation: { delivered: 40, waived: 0, expired: 0, cancelled: 0, assigneeCancelled: 0, skipped: 0, onTimeRate: 1, averageTicket: 1n },
   });
   const hiding = quoteAssignment({
     outstanding,
     daysToExpiry: 60,
-    reputation: { delivered: 40, waived: 0, expired: 0, cancelled: 0, skipped: 1, onTimeRate: 1, averageTicket: 1n },
+    reputation: { delivered: 40, waived: 0, expired: 0, cancelled: 0, assigneeCancelled: 0, skipped: 1, onTimeRate: 1, averageTicket: 1n },
   });
   assert.equal(hiding.price, unknown.price, "refused entries void the record");
   assert.ok(unknown.price < proven.price);
