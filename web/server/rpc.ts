@@ -24,8 +24,14 @@ export const RPC_METHODS = new Set([
   "eth_maxPriorityFeePerGas",
   "eth_feeHistory",
 ]);
+// viem batches every call of a tick (batch: true): the dashboard sends three or more per credit at once, so a lower cap
+// would break it as credits accumulate
 const RPC_BATCH = 50;
 const CACHE_MAX = 5_000;
+const CACHE_BYTES = 32 * 1024 * 1024; // the container has 256 MB
+const ENTRY_BYTES = 512 * 1024; // larger answers are served, never kept
+/** Widest eth_getLogs range: the dashboard reads 10k-block chunks; "earliest" or a missing bound would scan the chain. */
+const LOGS_MAX_BLOCKS = 10_000n;
 const HEAD_TTL_MS = 400; // a bit under Arc's block time
 
 type Call = { jsonrpc?: string; id?: unknown; method: string; params?: unknown[] };
@@ -42,20 +48,40 @@ export function rpcAllowed(body: unknown): boolean {
 }
 
 const isNum = (v: unknown): v is string => typeof v === "string" && /^0x[0-9a-f]+$/i.test(v);
+/** One blockHash, or numeric fromBlock and toBlock within LOGS_MAX_BLOCKS of each other. */
+function boundedLogs(c: Call): boolean {
+  const f = (c.params ?? [])[0] as { fromBlock?: unknown; toBlock?: unknown; blockHash?: unknown } | undefined;
+  if (!f || typeof f !== "object") return false;
+  if (f.blockHash !== undefined) return typeof f.blockHash === "string" && f.fromBlock === undefined && f.toBlock === undefined;
+  if (!isNum(f.fromBlock) || !isNum(f.toBlock)) return false;
+  const span = BigInt(f.toBlock) - BigInt(f.fromBlock);
+  return span >= 0n && span < LOGS_MAX_BLOCKS;
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function createRpcProxy(upstream: () => string, fetchImpl: typeof fetch = fetch) {
   // ponytail: one in-memory LRU per process, lost on restart; refills itself from Arc on demand
-  const cache = new Map<string, unknown>();
+  const cache = new Map<string, { result: unknown; size: number }>();
+  let bytes = 0;
   let head = 0n;
   let headAt = 0;
   let headValue: unknown = null;
   const inflight = new Map<string, Promise<Reply>>();
 
-  const remember = (key: string, result: unknown) => {
-    cache.delete(key);
-    cache.set(key, result);
-    if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
+  const remember = (key: string, result: unknown, size = key.length + (JSON.stringify(result)?.length ?? 0)) => {
+    if (size > ENTRY_BYTES) return;
+    const old = cache.get(key);
+    if (old) {
+      cache.delete(key);
+      bytes -= old.size;
+    }
+    cache.set(key, { result, size });
+    bytes += size;
+    while (cache.size > CACHE_MAX || bytes > CACHE_BYTES) {
+      const [k, v] = cache.entries().next().value!;
+      cache.delete(k);
+      bytes -= v.size;
+    }
   };
 
   /** True when the answer can never change: it is about blocks at or below the last head we saw. */
@@ -106,11 +132,13 @@ export function createRpcProxy(upstream: () => string, fetchImpl: typeof fetch =
     if (c.method === "eth_blockNumber" && headValue !== null && Date.now() - headAt < HEAD_TTL_MS)
       return { jsonrpc: "2.0", id, result: headValue };
     const key = JSON.stringify([c.method, c.params ?? []]);
-    if (cache.has(key)) {
-      const result = cache.get(key);
-      remember(key, result); // refresh its place in the LRU
-      return { jsonrpc: "2.0", id, result };
+    const hit = cache.get(key);
+    if (hit) {
+      remember(key, hit.result, hit.size); // refresh its place in the LRU
+      return { jsonrpc: "2.0", id, result: hit.result };
     }
+    if (c.method === "eth_getLogs" && !boundedLogs(c))
+      return { jsonrpc: "2.0", id, error: { code: -32602, message: `eth_getLogs needs a blockHash, or numeric fromBlock and toBlock at most ${LOGS_MAX_BLOCKS} blocks apart` } };
     // identical calls in flight share one upstream request (many visitors opening the dashboard at once)
     let pending = inflight.get(key);
     if (!pending) {
