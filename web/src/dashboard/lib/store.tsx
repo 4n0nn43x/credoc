@@ -95,7 +95,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         for (let from = scanned.current + 1n; from <= head.number; from += CHUNK + 1n) {
           const to = from + CHUNK > head.number ? head.number : from + CHUNK;
           const logs = await publicClient.getLogs({ address: CREDOC_ADDRESS, fromBlock: from, toBlock: to });
-          for (const l of parseEventLogs({ abi: documentaryCreditAbi, logs })) {
+          const parsed = parseEventLogs({ abi: documentaryCreditAbi, logs });
+          // one batched round trip for the chunk's block times, not one request per log
+          await Promise.all([...new Set(parsed.map((l) => l.blockNumber))].map(time));
+          for (const l of parsed) {
             fresh.push({
               name: l.eventName,
               args: l.args as Record<string, unknown>,
