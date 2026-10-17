@@ -65,7 +65,9 @@ contract CredocPass is Ownable2Step {
         if (end > type(uint64).max) revert BadParams(); // a grant near the end of time must not wrap to 1970
         until = uint64(end);
         activeUntil[account][plan] = until;
-        paidUntil[account][plan] = until;
+        // the paid time counts from now (or from the end of earlier paid time), not after a gifted period
+        uint256 paidFrom = paidUntil[account][plan] > block.timestamp ? paidUntil[account][plan] : block.timestamp;
+        paidUntil[account][plan] = uint64(paidFrom + uint256(periods) * PERIOD);
         usdc.safeTransferFrom(msg.sender, treasury, cost);
         emit PassBought(account, plan, until, msg.sender, cost);
     }

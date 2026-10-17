@@ -101,6 +101,19 @@ contract CredocPassTest is Test {
         assertEq(pass.activeUntil(importer, 2), until);
     }
 
+    /// review 2026-10-17: a month bought on top of a gifted year protects that month, not the gift
+    function test_grant_canStillEndAGiftBelowAPurchase() public {
+        pass.grant(importer, 2, uint64(block.timestamp + 365 days));
+        vm.prank(importer);
+        pass.buy(importer, 2, 1);
+        uint64 paid = uint64(block.timestamp + 30 days);
+        assertEq(pass.paidUntil(importer, 2), paid);
+        vm.expectRevert(CredocPass.BadParams.selector);
+        pass.grant(importer, 2, paid - 1);
+        pass.grant(importer, 2, paid); // the gift is taken back, the paid month stays
+        assertTrue(pass.isActive(importer, 2));
+    }
+
     /// review 2026-10-13 (L-2): buying on top of a far-future grant reverts instead of wrapping to 1970
     function test_buy_cannotWrapAGrant() public {
         pass.grant(importer, 2, type(uint64).max);
