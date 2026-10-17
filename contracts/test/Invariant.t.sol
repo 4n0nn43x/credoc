@@ -187,7 +187,7 @@ contract InvariantTest is Test {
         h = new Handler(dc, usdc);
         CredocPass ps = new CredocPass(usdc, makeAddr("treasury"), [uint96(49e6), 99e6, 299e6]);
         dc.setPass(ICredocPass(address(ps)), 10);
-        dc.setPartner(h.partner(), 2500);
+        dc.setPartner(h.partner(), 2500, 50);
         targetContract(address(h));
     }
 

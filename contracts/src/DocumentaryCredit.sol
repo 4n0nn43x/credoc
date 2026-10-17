@@ -179,6 +179,9 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     uint16 public proFeeBps; // fee for plan holders, never above the credit's own rate
     /// @dev registered white-label partners and their share of Credoc's fee (0 = not registered)
     mapping(address => uint16) public partnerShareBps;
+    /// @dev the most each partner may charge on top, set by the owner with the partner: the importer picks the fee
+    ///      but the exporter pays it, so the importer must not be able to raise it beyond what Credoc agreed
+    mapping(address => uint16) public partnerMaxFeeBps;
 
     // ------------------------------------------------------------------ events
 
@@ -218,7 +221,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     event TreasuryChanged(address treasury);
     event FeesWithdrawn(address indexed token, uint256 amount);
     event PassChanged(address pass, uint16 proFeeBps);
-    event PartnerSet(address indexed partner, uint16 shareBps);
+    event PartnerSet(address indexed partner, uint16 shareBps, uint16 maxIntegratorFeeBps);
     event CreditPartner(uint256 indexed creditId, address indexed partner, uint16 shareBps, uint16 integratorFeeBps);
     event PartnerFeeAccrued(uint256 indexed creditId, uint8 indexed tranche, address indexed partner, uint128 amount);
 
@@ -604,18 +607,22 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
         emit PassChanged(address(p), bps);
     }
 
-    /// @notice Register a white-label partner, or change its share for credits opened from now on (0 unregisters:
-    ///         a partner needs a share above zero to be named on new credits).
-    function setPartner(address partner, uint16 shareBps) external onlyOwner {
-        if (partner == address(0) || partner == address(this) || shareBps > MAX_PARTNER_SHARE_BPS) revert BadParams();
+    /// @notice Register a white-label partner, or change its share and its own fee cap for credits opened from now on
+    ///         (a share of 0 unregisters: a partner needs a share above zero to be named on new credits).
+    function setPartner(address partner, uint16 shareBps, uint16 maxIntegratorFeeBps) external onlyOwner {
+        if (
+            partner == address(0) || partner == address(this) || shareBps > MAX_PARTNER_SHARE_BPS
+                || maxIntegratorFeeBps > MAX_INTEGRATOR_FEE_BPS
+        ) revert BadParams();
         partnerShareBps[partner] = shareBps;
-        emit PartnerSet(partner, shareBps);
+        partnerMaxFeeBps[partner] = maxIntegratorFeeBps;
+        emit PartnerSet(partner, shareBps, maxIntegratorFeeBps);
     }
 
-    /// @dev A registered partner, not a party to the credit, with a fee within the cap.
+    /// @dev A registered partner, not a party to the credit, with a fee within the cap the owner set for it.
     function _isPartnerFor(OpenParams calldata p, address applicant) internal view returns (bool) {
         return partnerShareBps[p.partner] != 0 && p.partner != applicant && p.partner != p.beneficiary
-            && p.integratorFeeBps <= MAX_INTEGRATOR_FEE_BPS;
+            && p.integratorFeeBps <= partnerMaxFeeBps[p.partner];
     }
 
     /// @dev True only if the plans contract answers "active"; any failure means no discount, never a blocked payment.

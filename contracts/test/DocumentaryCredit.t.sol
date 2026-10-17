@@ -809,6 +809,26 @@ contract DocumentaryCreditTest is Test {
         dc.withdrawExpiryProposal(id);
     }
 
+    /// L-4: the importer picks the integrator fee but the exporter pays it: it stays within the partner's own cap
+    function test_review3_L4_integratorFeeCappedPerPartner() public {
+        address partner = makeAddr("partner");
+        dc.setPartner(partner, 2500, 20);
+        assertEq(dc.partnerMaxFeeBps(partner), 20);
+        DocumentaryCredit.OpenParams memory p = _params(1000e6, 0);
+        p.partner = partner;
+        p.integratorFeeBps = 21;
+        _expectBad(p);
+        p.integratorFeeBps = 20;
+        vm.prank(importer);
+        uint256 id = dc.open(p, "");
+        assertEq(dc.getCredit(id).integratorFeeBps, 20);
+        dc.setPartner(partner, 2500, 0); // a partner without a cap of its own charges nothing on top
+        p.integratorFeeBps = 1;
+        _expectBad(p);
+        vm.expectRevert(DocumentaryCredit.BadParams.selector);
+        dc.setPartner(partner, 2500, 51);
+    }
+
     // ------------------------------------------------------------ settlement fee
 
     function test_fee_takenOnSettlementOnly_andSentToTreasury() public {
@@ -958,9 +978,9 @@ contract DocumentaryCreditTest is Test {
     function test_partner_shareAndIntegratorFee() public {
         address partner = makeAddr("partner");
         dc.setFee(25);
-        dc.setPartner(partner, 2500); // a quarter of Credoc's fee
+        dc.setPartner(partner, 2500, 50); // a quarter of Credoc's fee
         uint256 id = _openVia(partner, 50, 10_000e6);
-        dc.setPartner(partner, 5000); // later changes never reach an open credit
+        dc.setPartner(partner, 5000, 50); // later changes never reach an open credit
         _presentBoth(id, 0);
         // fee 25 USDC, of which 6.25 to the partner; integrator fee 50 USDC; exporter gets the rest
         assertEq(usdc.balanceOf(exporter), 10_000e6 - 25e6 - 50e6);
@@ -981,13 +1001,13 @@ contract DocumentaryCreditTest is Test {
         _expectBad(p);
         p.integratorFeeBps = 0;
         _expectBad(p);
-        dc.setPartner(importer, 2500);
-        dc.setPartner(exporter, 2500);
+        dc.setPartner(importer, 2500, 50);
+        dc.setPartner(exporter, 2500, 50);
         p.partner = importer;
         _expectBad(p);
         p.partner = exporter;
         _expectBad(p);
-        dc.setPartner(makeAddr("integrator"), 0); // a zero share unregisters
+        dc.setPartner(makeAddr("integrator"), 0, 50); // a zero share unregisters
         p.partner = makeAddr("integrator");
         _expectBad(p);
     }
@@ -1005,20 +1025,20 @@ contract DocumentaryCreditTest is Test {
         p.integratorFeeBps = 0;
         _expectBad(p);
         vm.expectRevert(DocumentaryCredit.BadParams.selector);
-        dc.setPartner(partner, 5001);
+        dc.setPartner(partner, 5001, 50);
         vm.expectRevert(DocumentaryCredit.BadParams.selector);
-        dc.setPartner(address(0), 100);
+        dc.setPartner(address(0), 100, 50);
         vm.expectRevert(DocumentaryCredit.BadParams.selector);
-        dc.setPartner(address(dc), 100);
+        dc.setPartner(address(dc), 100, 50);
         vm.prank(stranger);
         vm.expectRevert();
-        dc.setPartner(stranger, 5000);
+        dc.setPartner(stranger, 5000, 50);
     }
 
     function test_partner_refundsAreFree() public {
         address partner = makeAddr("partner");
         dc.setFee(25);
-        dc.setPartner(partner, 2500);
+        dc.setPartner(partner, 2500, 50);
         uint256 id = _openVia(partner, 50, 1000e6);
         vm.warp(expiry + 1);
         dc.reclaim(id);
