@@ -497,6 +497,8 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     ///         Assignment of proceeds (UCP 600 art. 39): the beneficiary still ships and presents, the financier collects.
     function makeOffer(uint256 id, uint128 price, uint64 validUntil) external nonReentrant returns (uint256 offerId) {
         Credit storage c = _active(id);
+        // the applicant cannot buy its own credit's proceeds: as payee it could `cancel` and take its money back
+        if (msg.sender == c.applicant) revert Unauthorized();
         if (block.timestamp > c.expiry) revert Expired();
         // an offer cannot outlive the credit: accepted after expiry, the financier would buy a certain refund
         if (price == 0 || price > c.outstanding || validUntil <= block.timestamp || validUntil > c.expiry) {

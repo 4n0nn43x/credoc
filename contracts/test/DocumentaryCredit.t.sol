@@ -733,6 +733,17 @@ contract DocumentaryCreditTest is Test {
         _expectBad(p);
     }
 
+    // ------------------------------------------------------------ review 2026-10-17
+
+    /// M-1: the importer could buy the proceeds, become payee, cancel and take its money back
+    function test_review3_M1_applicantCannotBuyItsProceeds() public {
+        uint256 id = _open(1000e6, 0);
+        vm.prank(importer);
+        vm.expectRevert(DocumentaryCredit.Unauthorized.selector);
+        dc.makeOffer(id, 900e6, uint64(block.timestamp + 1 days));
+        assertEq(dc.offerCount(), 0);
+    }
+
     // ------------------------------------------------------------ settlement fee
 
     function test_fee_takenOnSettlementOnly_andSentToTreasury() public {
