@@ -41,6 +41,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .table > :not(caption) > * > * { padding-top: 0.7rem; padding-bottom: 0.7rem; }
 .empty-state { padding: 3rem 1rem; text-align: center; }
 .empty-state .ti { font-size: 32px; color: rgba(25, 25, 25, 0.35); }
+/* file drop zone: the file input is visually hidden but keeps keyboard focus, shown on its label */
+.credoc-filedrop:has(input:focus-visible) { outline: 2px solid var(--credoc-ink); outline-offset: 2px; }
 
 .network-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--credoc-paper); font-size: 12px; font-weight: 500; }
 .network-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #2f7d4f; }
