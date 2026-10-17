@@ -271,6 +271,22 @@ export function quoteAssignment(args: {
   return { price, annualRate, discount: args.outstanding - price };
 }
 
+/**
+ * What the payee receives for the unsettled tranches, as the contract's `_settleFees` computes it, tranche by
+ * tranche: amount - Credoc's fee - the integrator fee, each rounded down. `proFeeBps` applies only if it is
+ * lower than the credit's rate; pass it when the payee holds an active financier plan.
+ */
+export function netProceeds(
+  c: Pick<CreditView, "feeBps" | "integratorFeeBps"> & { tranches: readonly { amount: bigint; settled: boolean }[] },
+  proFeeBps?: number,
+): bigint {
+  const rate = BigInt(proFeeBps !== undefined && proFeeBps < c.feeBps ? proFeeBps : c.feeBps);
+  const integ = BigInt(c.integratorFeeBps);
+  return c.tranches
+    .filter((t) => !t.settled)
+    .reduce((sum, t) => sum + t.amount - (t.amount * rate) / 10_000n - (t.amount * integ) / 10_000n, 0n);
+}
+
 // ---------------------------------------------------------------- client
 
 type Wallet = WalletClient<Transport, Chain | undefined, Account>;

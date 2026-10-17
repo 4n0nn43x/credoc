@@ -8,6 +8,7 @@ import {
   docType,
   docLabel,
   hashDocument,
+  netProceeds,
   quoteAssignment,
   validateOpenParams,
   signPresentation,
@@ -99,4 +100,21 @@ test("signPresentation produces a signature recoverable to the attestor", async 
   });
   assert.equal(signer, account.address);
   assert.equal(s.attestor, account.address);
+});
+
+test("netProceeds mirrors _settleFees, rounding each tranche down", () => {
+  const c = {
+    feeBps: 100, // 1%
+    integratorFeeBps: 50, // 0.5%
+    tranches: [
+      { amount: 150n, settled: false },
+      { amount: 150n, settled: false },
+      { amount: 1_000n, settled: true }, // already paid: not part of the proceeds
+    ],
+  };
+  // per tranche: fee 150 * 1% = 1 (1.5 rounded down), integrator 150 * 0.5% = 0, net 149
+  assert.equal(netProceeds(c), 298n);
+  assert.equal(netProceeds(c, 0), 300n, "a financier plan at 0 bps leaves only the integrator fee, 0 here");
+  assert.equal(netProceeds(c, 200), 298n, "a plan rate above the credit's own rate is ignored");
+  assert.equal(netProceeds({ ...c, feeBps: 0, integratorFeeBps: 0 }), 300n);
 });

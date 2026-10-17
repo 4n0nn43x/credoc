@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { netProceeds } from "@credoc/sdk";
 import { sameAddress } from "../../shared/format";
 import { isAcceptable, rolesOf } from "../lib/model";
 import type { CreditRow } from "../lib/store";
@@ -150,7 +151,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
             {openOffers.map((o) => {
               const discount = c.outstanding - o.price;
               const days = Math.max(1, (Number(c.expiry) - now) / DAY);
-              const rate = (Number(discount) / Number(o.price)) * (365 / days);
+              // annualized against what you would collect yourself, net of the settlement fees (no plan discount assumed)
+              const rate = (Number(netProceeds(c) - o.price) / Number(o.price)) * (365 / days);
               return (
                 <li key={o.id.toString()} className="d-flex flex-wrap gap-2 align-items-center justify-content-between py-2">
                   <div className="fs-13">
