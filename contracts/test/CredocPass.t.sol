@@ -85,6 +85,22 @@ contract CredocPassTest is Test {
         vm.stopPrank();
     }
 
+    /// review 2026-10-17 (L-5): a grant can end a free plan, but never shorten a paid one
+    function test_grant_cannotShortenAPaidPlan() public {
+        pass.grant(forwarder, 1, uint64(block.timestamp + 90 days));
+        pass.grant(forwarder, 1, 0); // a pilot ends
+        assertFalse(pass.isActive(forwarder, 1));
+        vm.prank(importer);
+        uint64 until = pass.buy(importer, 2, 1);
+        vm.expectRevert(CredocPass.BadParams.selector);
+        pass.grant(importer, 2, 0);
+        vm.expectRevert(CredocPass.BadParams.selector);
+        pass.grant(importer, 2, until - 1);
+        pass.grant(importer, 2, until + 30 days); // extending stays possible
+        pass.grant(importer, 2, until); // and so does taking the gift back
+        assertEq(pass.activeUntil(importer, 2), until);
+    }
+
     /// review 2026-10-13 (L-2): buying on top of a far-future grant reverts instead of wrapping to 1970
     function test_buy_cannotWrapAGrant() public {
         pass.grant(importer, 2, type(uint64).max);

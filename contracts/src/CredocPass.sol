@@ -25,6 +25,8 @@ contract CredocPass is Ownable2Step {
     address public treasury;
     mapping(uint8 => uint96) public price; // USDC (6 decimals) per period; 0 = not for sale
     mapping(address => mapping(uint8 => uint64)) public activeUntil;
+    /// @dev end of the last purchase: a grant can never end a plan before it, so the owner cannot cut a paid period
+    mapping(address => mapping(uint8 => uint64)) public paidUntil;
     /// @dev "verified attestor" badge, granted after an offchain KYB check and never sold with a plan
     mapping(address => bool) public verified;
 
@@ -63,6 +65,7 @@ contract CredocPass is Ownable2Step {
         if (end > type(uint64).max) revert BadParams(); // a grant near the end of time must not wrap to 1970
         until = uint64(end);
         activeUntil[account][plan] = until;
+        paidUntil[account][plan] = until;
         usdc.safeTransferFrom(msg.sender, treasury, cost);
         emit PassBought(account, plan, until, msg.sender, cost);
     }
@@ -73,9 +76,9 @@ contract CredocPass is Ownable2Step {
 
     // ------------------------------------------------------------------ owner
 
-    /// @notice Pilots and partners: set a plan's end date directly (0 ends it).
+    /// @notice Pilots and partners: set a plan's end date directly (0 ends it), never before the end of what was paid.
     function grant(address account, uint8 plan, uint64 until) external onlyOwner {
-        if (plan == 0 || plan > PLANS) revert BadParams();
+        if (plan == 0 || plan > PLANS || until < paidUntil[account][plan]) revert BadParams();
         activeUntil[account][plan] = until;
         emit PassGranted(account, plan, until);
     }
