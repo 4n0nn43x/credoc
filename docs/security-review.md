@@ -154,3 +154,42 @@ Buying on top of a far-future grant wrapped it to 1970, killing the plan. **Fix:
 - Plans are not bound to a role: an exporter holding a financier plan collects its own proceeds at the plan rate. Accepted as pricing, not security.
 - `TrancheSettled.fee` is everything withheld (Credoc fee plus integrator fee); `PartnerFeeAccrued` gives the partner's part.
 - `CreditPartner` is now emitted after `CreditOpened`.
+
+---
+
+## Fourth pass, 2026-10-17: before the redeployment
+
+Findings on the contracts deployed at `0xBA5e922A3C9eacd10Bc533B3E793EA5b58d961EE` (DocumentaryCredit) and `0x761bFe87399E7D012c477C166eD0D7A711C305E1` (CredocPass). Both are fixed in source and need a new deployment: the contracts are not upgradeable.
+
+### M-1 (Medium) The importer could buy its own proceeds, cancel, and write "cancelled" on the exporter
+`makeOffer` accepted any caller. The applicant offered for the proceeds, the exporter accepted (and was paid the price), and the applicant, now the payee, called `cancel`: the locked amount went back to the applicant and every refunded tranche wrote "cancelled" on the exporter's identity, a decision the exporter never took.
+**Fix:** (a) `makeOffer` reverts with `Unauthorized` for the applicant, the only path to become payee (`test_review3_M1_applicantCannotBuyItsProceeds`). (b) A cancel by a payee who is not the beneficiary is written with the tag `assignee-cancelled` instead of `cancelled` (value 0, one entry per refunded tranche), because the same trick stays possible through a second address of the importer (`test_review3_M1_assigneeCancelTaggedApart`). The entry is not dropped: an exporter could otherwise sell to its own second address and cancel to dodge both `expired` and `cancelled`. Readers should count `assignee-cancelled` as a tranche not delivered whose cause is unknown.
+**Status:** fixed.
+
+### L-1 (Low) Return data bomb from the reputation registry
+`(bool ok,) = registry.call{gas: FEEDBACK_GAS}(data)` still copies the whole return data into memory, outside the gas cap. A registry (upgradeable proxy) answering 288 KB per call made a settlement with three entries cost 2.27M gas instead of under 1.1M.
+**Fix:** the call is made in assembly with an output size of 0 and no `returndatacopy` (ExcessivelySafeCall pattern); the `gasleft()` guard and `skippedFeedback` are unchanged (`test_review3_L1_returnBombIsNotCopied`, `ReturnBombRegistry` mock). The fork tests against the live registries still pass.
+**Status:** fixed.
+
+### L-2 (Low) The importer can waive the last document just before the attestor presents it
+The money flow is identical (the payee is paid in full), only the outcome tag changes from `delivered` to `waived`. Every on-chain fix found changes the UCP 600 art. 16 flow, where the applicant may accept a discrepancy at any time and the tranche settles at once: delaying the settlement after a waiver would hold the exporter's money, and reserving waivers to after expiry breaks the normal use. Retagging later is not possible without revoking ERC-8004 entries.
+**Status:** accepted risk. The front-run costs the importer the whole tranche, gives it no money, and `waived` is a positive outcome (value 100). An attestor that wants to avoid it presents as soon as the document exists.
+
+### L-3 (Low) Expiry proposals could not be withdrawn
+A proposal stayed open until overwritten, so the other side could accept it much later.
+**Fix:** `withdrawExpiryProposal(id)`, callable by the proposer only, deletes it and emits `ExpiryProposalWithdrawn` (`test_review3_L3_expiryProposalWithdrawable`). No time limit was added: a proposal still cannot outlive the credit (`amendExpiry` reverts after expiry) and a payee change already clears the seller's proposal.
+**Status:** fixed.
+
+### L-4 (Low) The integrator fee was chosen by the importer and paid by the exporter
+Any registered partner could be named with a fee up to the global 0.5% cap, picked by the importer at `open`.
+**Fix:** `setPartner(partner, shareBps, maxIntegratorFeeBps)` stores a cap per partner (at most `MAX_INTEGRATOR_FEE_BPS`); `open` reverts with `BadParams` above it. The signature of `open` is unchanged (`test_review3_L4_integratorFeeCappedPerPartner`).
+**Status:** fixed. Residual: the exporter still does not sign the fee; it is visible in `CreditPartner` before shipping.
+
+### L-5 (Low) `CredocPass.grant` could shorten a paid plan
+**Fix:** `paidUntil[account][plan]` records the end of the last purchase; `grant` reverts below it. Free grants can still be ended with `grant(account, plan, 0)` (`test_grant_cannotShortenAPaidPlan`).
+**Status:** fixed.
+
+### Info
+- **I-1** The README said a customer pays at most 0.75%. The real ceiling is 1% (`MAX_FEE_BPS`) plus 0.5%, taken from the payee. Fixed.
+- **I-3** An offer may still be valid until the credit's expiry second. Adding a margin would break the documented rule (`test_audit_offerBoundToExpiry`), so it is left as is.
+- **Coverage.** `forge coverage` fails with "Stack too deep" because coverage disables the optimizer; `forge coverage --ir-minimum` works (DocumentaryCredit 98.8% lines, CredocPass 100%). CI does not run coverage, only `forge build` and `forge test`.
