@@ -8,6 +8,7 @@ import { dateShort, sameAddress, shortHex, utc } from "../../shared/format";
 import { Card, Empty, PageTitle, Skeleton, TxLink, When } from "../components/ui";
 import { FeeNote, FileDrop, type Hashed, SignButton, daysLeft, partyName, prettyDoc } from "../components/form-kit";
 import { type CreditRow, useStore } from "../lib/store";
+import { publicClient } from "../lib/clients";
 import { useTx } from "../lib/tx";
 import { useWallet } from "../lib/wallet";
 
@@ -24,6 +25,8 @@ const RELAY_ERRORS: Record<string, string> = {
   SignatureExpired: "Your signature expired before it was sent. Sign again.",
   Unauthorized: "Your wallet is not the nominated attestor for this document.",
   "relayer is not configured": "The relay service is offline. Use \"Present directly\" instead.",
+  "this document is already being relayed": "This presentation is already on its way. Wait a few seconds, then refresh.",
+  "too many requests": "Too many presentations from this connection. Wait a minute, or use \"Present directly\".",
 };
 
 export function Attest() {
@@ -88,7 +91,14 @@ export function Attest() {
           signature: s.signature,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { hash?: Hex; seconds?: number; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { hash?: Hex; seconds?: number; error?: string; status?: string; hint?: string };
+      // 202: sent, but the relayer stopped waiting for the receipt; wait here instead of calling it confirmed
+      if (res.status === 202 && body.hash) {
+        const t0 = Date.now();
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: body.hash });
+        if (receipt.status !== "success") throw new Error("The relayed transaction reverted.");
+        body.seconds = (Date.now() - t0) / 1000;
+      }
       if (res.ok && body.hash) {
         setLast({ hash: body.hash, seconds: body.seconds ?? 0 });
         notify(title, "confirmed", undefined, { hash: body.hash, seconds: body.seconds });
@@ -97,7 +107,7 @@ export function Attest() {
         await refresh();
       } else if (res.status === 402) {
         setQuota(true);
-        notify(title, "failed", "Your free relayed presentations for this month are used.");
+        notify(title, "failed", body.hint ?? "Your free relayed presentations for this month are used.");
       } else {
         const err = body.error ?? `relay failed (${res.status})`;
         notify(title, "failed", RELAY_ERRORS[err] ?? contractErrorMessage(err) ?? err);
