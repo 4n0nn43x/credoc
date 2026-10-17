@@ -60,7 +60,7 @@ Credoc takes **0.25% of each settled tranche**, deducted from the payee's procee
 The verified-attestor badge is separate: granted by the owner after a business verification, never sold with a plan.
 Plan lookups are gas-capped static calls: a broken or malicious pass can only remove a discount, never block a payment.
 
-**Partners and white label**: the owner registers a partner with a share of Credoc's fee (at most 50%). Credits opened through it record the partner, its share and its own optional fee on top (at most 0.5%), all fixed at opening and paid to the partner's `owed` balance. A partner can never be the credit's applicant or beneficiary, so nobody can skim the exporter by naming themselves. At most a customer pays 0.25% + 0.5% = 0.75%.
+**Partners and white label**: the owner registers a partner with a share of Credoc's fee (at most 50%). Credits opened through it record the partner, its share and its own optional fee on top (at most 0.5%), all fixed at opening and paid to the partner's `owed` balance. A partner can never be the credit's applicant or beneficiary, so nobody can skim the exporter by naming themselves. At most the payee (the exporter, or the financier who bought the proceeds) gives up 1% + 0.5% = 1.5% of a settled tranche: the contract caps Credoc's fee at 1% (0.25% today) and a partner's own fee at the cap the owner set for it, never above 0.5%.
 
 ## Why Arc
 
