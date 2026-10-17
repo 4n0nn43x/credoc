@@ -183,6 +183,7 @@ export function handler(
   const apiLimit = rateLimiter(3_000, 50); // every API call, each call of an RPC batch counted
   const relayLimit = rateLimiter(10, 1 / 60);
   const hitLimit = rateLimiter(30, 0.2);
+  const nonceLimit = rateLimiter(10, 0.1); // well under the 1000 pending nonces, so one client cannot evict the admin's
   const tooMany = (res: ServerResponse) => json(res, 429, { error: "too many requests" }, { "retry-after": "10" });
   // an unexpected throw answers 500 instead of taking the whole process down with an unhandled rejection
   return async (req, res) => {
@@ -215,6 +216,7 @@ export function handler(
       // on any other host the admin does not exist: no hint that it lives elsewhere
       if (admin?.host && hostOf(req) !== admin.host) return json(res, 404, { error: "not found" });
       if (!admin || !store) return json(res, 503, { error: "admin is not configured" });
+      if (path === "/api/admin/nonce" && req.method === "GET" && !nonceLimit(ipOf(req))) return tooMany(res);
       if (path === "/api/admin/nonce" && req.method === "GET") return json(res, 200, { message: loginMessage(hostOf(req)) });
       if (path === "/api/admin/login" && req.method === "POST") {
         const r = await readJson(req, res);

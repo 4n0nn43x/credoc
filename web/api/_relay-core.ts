@@ -59,7 +59,11 @@ const WINDOW_MS = 30 * 86_400_000;
 export const RELAY_GAS_LIMIT = 1_500_000n;
 
 /** Where relayed presentations are counted: SQLite in production (server/analytics.ts), memory otherwise. */
-export type RelayLedger = { count(key: string, since: number): number; add(key: string, now: number): void };
+export type RelayLedger = {
+  count(key: string, since: number): number;
+  add(key: string, now: number): void;
+  remove(key: string, at: number): void; // gives back one unit taken at `at`
+};
 
 export function memoryLedger(): RelayLedger {
   const used = new Map<string, number[]>();
@@ -73,14 +77,33 @@ export function memoryLedger(): RelayLedger {
     add(key, now) {
       used.set(key, [...(used.get(key) ?? []), now]);
     },
+    remove(key, at) {
+      const list = used.get(key) ?? [];
+      const i = list.indexOf(at);
+      if (i >= 0) list.splice(i, 1);
+    },
   };
 }
 
 /** Takes one unit from every limit, or none. Synchronous, so no other request of this process can interleave. */
 export function reserve(ledger: RelayLedger, limits: [key: string, max: number][], now = Date.now()): boolean {
   if (limits.some(([key, max]) => ledger.count(key, now - WINDOW_MS) >= max)) return false;
-  for (const [key] of limits) ledger.add(key, now);
+  const taken: string[] = [];
+  try {
+    for (const [key] of limits) {
+      ledger.add(key, now);
+      taken.push(key);
+    }
+  } catch (e) {
+    release(ledger, taken, now); // a store error must not leave half a reservation
+    throw e;
+  }
   return true;
+}
+
+/** Gives back a reservation, for a presentation that was never broadcast. */
+export function release(ledger: RelayLedger, keys: string[], at: number) {
+  for (const key of keys) ledger.remove(key, at);
 }
 
 const memory = memoryLedger();
@@ -184,15 +207,25 @@ export async function relayPresentation(input: unknown, env: RelayEnv, ledger: R
       account,
       gas: RELAY_GAS_LIMIT,
     });
-    // counted before sending and never refunded: a reverted transaction costs the relayer as much as a good one
-    if (!reserve(ledger, limits)) return quotaUsed;
+    // counted before sending and never refunded once broadcast: a reverted transaction costs the relayer as much as a good one
     const t0 = Date.now();
-    const hash = await wallet.writeContract({ ...request, gas: RELAY_GAS_LIMIT });
+    if (!reserve(ledger, limits, t0)) return quotaUsed;
+    let hash: Hex;
+    try {
+      hash = await wallet.writeContract({ ...request, gas: RELAY_GAS_LIMIT });
+    } catch (e) {
+      // never broadcast (relayer out of funds, RPC refused it): the attestor keeps its unit, the nonce sequence restarts
+      release(ledger, limits.map(([key]) => key), t0);
+      nonceManager.reset({ address: account.address, chainId: chain.id });
+      throw e;
+    }
     let receipt;
     try {
       receipt = await pub.waitForTransactionReceipt({ hash, timeout: env.receiptTimeoutMs ?? 30_000 });
     } catch {
-      // sent, but no receipt yet (timeout or RPC hiccup): not a failure, the client follows the hash
+      // sent, but no receipt yet (timeout or RPC hiccup): not a failure, the client follows the hash.
+      // the next relay rereads the pending nonce, so a dropped transaction cannot leave a gap behind it
+      nonceManager.reset({ address: account.address, chainId: chain.id });
       return { status: 202, body: { hash, status: "pending" } };
     }
     if (receipt.status !== "success") return bad("transaction reverted", 502);

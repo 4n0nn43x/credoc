@@ -56,7 +56,7 @@ test("the free relay quota allows FREE_RELAYS per attestor per 30 days, then ref
 });
 
 /** A fake Arc JSON-RPC: credit 1 has doc 1 nominated to `attestor`, no CredocPass, and every transaction reverts. */
-async function fakeChain(o: { attestorCode?: Hex; receipt?: "none" } = {}) {
+async function fakeChain(o: { attestorCode?: Hex; receipt?: "none"; refuseSend?: boolean } = {}) {
   const views = parseAbi([
     "function pass() view returns (address)",
     "function getDocs(uint256 id) view returns ((bytes32 docType, address attestor)[])",
@@ -95,6 +95,7 @@ async function fakeChain(o: { attestorCode?: Hex; receipt?: "none" } = {}) {
       case "eth_blockNumber":
         return "0x2";
       case "eth_sendRawTransaction":
+        if (o.refuseSend) throw new Error("insufficient funds for gas");
         sent.push(parseTransaction(params[0] as Hex).gas!);
         nonces.push(parseTransaction(params[0] as Hex).nonce!);
         return `0x${"ab".repeat(32)}`;
@@ -144,6 +145,27 @@ test("a relayed presentation is sent with the gas cap and counted before sending
   } finally {
     chain.close();
   }
+});
+
+test("a presentation the RPC refuses to broadcast gives the free relay back", async () => {
+  const chain = await fakeChain({ refuseSend: true });
+  try {
+    const ledger = memoryLedger();
+    const r = await relayPresentation(good, { ...env, rpcUrl: chain.url }, ledger);
+    assert.equal(r.status, 502);
+    const since = Date.now() - 60_000;
+    assert.equal(ledger.count(`attestor:${chain.attestor}`, since), 0);
+    assert.equal(ledger.count(`applicant:${chain.applicant}`, since), 0);
+  } finally {
+    chain.close();
+  }
+});
+
+test("reserve leaves no half reservation when the store fails", () => {
+  const ledger = memoryLedger();
+  const failing = { ...ledger, add: (key: string, now: number) => (key === "b" ? (() => { throw new Error("disk full"); })() : ledger.add(key, now)) };
+  assert.throws(() => reserve(failing, [["a", 1], ["b", 1]], 1_000));
+  assert.equal(ledger.count("a", 0), 0);
 });
 
 test("the free tier is for wallet attestors only, and is capped per importer too", async () => {

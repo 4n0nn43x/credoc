@@ -74,12 +74,14 @@ export function openStore(dir: string) {
   const insertEvent = db.prepare("INSERT INTO events VALUES (?, ?, ?)");
   const countRelays = db.prepare("SELECT COUNT(*) AS n FROM relays WHERE key = ? AND ts > ?");
   const insertRelay = db.prepare("INSERT INTO relays VALUES (?, ?)");
+  const deleteRelay = db.prepare("DELETE FROM relays WHERE rowid = (SELECT rowid FROM relays WHERE key = ? AND ts = ? LIMIT 1)");
 
   return {
     /** Free relay quota (api/_relay-core.ts), kept across restarts and deploys. Synchronous, like the check it backs. */
     relays: {
       count: (key: string, since: number) => Number((countRelays.get(key, since) as { n: number }).n),
       add: (key: string, now: number) => void insertRelay.run(now, key),
+      remove: (key: string, at: number) => void deleteRelay.run(key, at),
     } satisfies RelayLedger,
 
     /** Records a page view. ip and ua only feed the daily visitor hash and are not stored. */
