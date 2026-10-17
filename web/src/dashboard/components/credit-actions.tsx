@@ -11,6 +11,7 @@ import { Addr, Amount, When } from "./ui";
 import { prettyDoc, who } from "./credit-kit";
 
 const DAY = 86400;
+// the contract caps the new expiry at block time + 730 days: the form offers 729, at midday UTC (as NewCredit does)
 const MAX_TENOR = 730 * DAY;
 
 /** Latest expiry proposal still binding: the contract drops a proposal when its proposer sells the proceeds. */
@@ -225,7 +226,7 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
             style={{ maxWidth: 170 }}
             value={date}
             min={new Date((Number(c.expiry) + DAY) * 1000).toISOString().slice(0, 10)}
-            max={new Date((now + MAX_TENOR) * 1000).toISOString().slice(0, 10)}
+            max={new Date((now + MAX_TENOR - DAY) * 1000).toISOString().slice(0, 10)}
             onChange={(e) => setDate(e.target.value)}
             aria-label="New expiry date"
           />
@@ -234,7 +235,7 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
             className="btn btn-sm btn-outline-dark"
             disabled={!date || busy !== null}
             onClick={() => {
-              const ts = BigInt(Math.floor(Date.parse(`${date}T23:59:59Z`) / 1000));
+              const ts = BigInt(Math.floor(Date.parse(`${date}T12:00:00Z`) / 1000));
               act("propose", "Propose a new expiry", (x) => x.amendExpiry(id, ts));
             }}
           >
