@@ -202,7 +202,7 @@ export function handler(
         return send(res, 400, JSON.stringify({ error: "invalid JSON" }), "application/json");
       }
       const r = await relayPresentation(body, env(), store?.relays); // no data volume: counted in memory
-      store?.event(r.status === 200 ? "relay" : r.status === 402 ? "relay_quota" : "relay_refused");
+      store?.event(r.status < 300 ? "relay" : r.status === 402 ? "relay_quota" : "relay_refused");
       return send(res, r.status, JSON.stringify(r.body), "application/json", { "cache-control": "no-store" });
     }
 

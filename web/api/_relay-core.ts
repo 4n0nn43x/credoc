@@ -8,6 +8,7 @@ import {
   http,
   isAddress,
   isHex,
+  nonceManager,
   parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -98,7 +99,8 @@ const inflight = new Set<string>();
  * nominated attestor, and the call is simulated first so an invalid request costs the relayer nothing.
  */
 
-export type RelayEnv = { rpcUrl?: string; contract?: string; relayerKey?: string };
+/** receiptTimeoutMs: how long to wait for the receipt before answering 202 with the hash (tests shorten it). */
+export type RelayEnv = { rpcUrl?: string; contract?: string; relayerKey?: string; receiptTimeoutMs?: number };
 export type RelayResult = { status: number; body: Record<string, unknown> };
 
 const bad = (error: string, status = 400): RelayResult => ({ status, body: { error } });
@@ -131,7 +133,8 @@ export async function relayPresentation(input: unknown, env: RelayEnv, ledger: R
   if (!isHex(signature) || signature.length < 132 || signature.length > 2 + 2 * 2048) return bad("invalid signature");
 
   const chain = { ...arc, rpcUrls: { default: { http: [env.rpcUrl || arc.rpcUrls.default.http[0]] } } };
-  const account = privateKeyToAccount(env.relayerKey as Hex);
+  // one nonce sequence per relayer address for the whole process: concurrent relays must not reuse a nonce
+  const account = privateKeyToAccount(env.relayerKey as Hex, { nonceManager });
   const pub = createPublicClient({ chain, transport: http(), pollingInterval: 500 }); // Arc: sub-second finality
   const wallet = createWalletClient({ account, chain, transport: http() });
   const args = [creditId, Number(tranche), Number(doc), docHash, deadline, signature as Hex] as const;
@@ -185,7 +188,13 @@ export async function relayPresentation(input: unknown, env: RelayEnv, ledger: R
     if (!reserve(ledger, limits)) return quotaUsed;
     const t0 = Date.now();
     const hash = await wallet.writeContract({ ...request, gas: RELAY_GAS_LIMIT });
-    const receipt = await pub.waitForTransactionReceipt({ hash });
+    let receipt;
+    try {
+      receipt = await pub.waitForTransactionReceipt({ hash, timeout: env.receiptTimeoutMs ?? 30_000 });
+    } catch {
+      // sent, but no receipt yet (timeout or RPC hiccup): not a failure, the client follows the hash
+      return { status: 202, body: { hash, status: "pending" } };
+    }
     if (receipt.status !== "success") return bad("transaction reverted", 502);
     return { status: 200, body: { hash, seconds: (Date.now() - t0) / 1000, block: receipt.blockNumber.toString() } };
   } catch (e) {

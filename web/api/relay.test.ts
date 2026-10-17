@@ -70,6 +70,7 @@ async function fakeChain(o: { attestorCode?: Hex; receipt?: "none" } = {}) {
     [[applicant, applicant, applicant, applicant, 0n, 1, 0, 0n, 0n, 0n, 0n, zero32, applicant, 0, 0]] as never,
   );
   const sent: bigint[] = [];
+  const nonces: number[] = [];
   const answer = (method: string, params: unknown[]): unknown => {
     const p0 = (params[0] ?? {}) as { data?: string; input?: string };
     const data = String(p0.data ?? p0.input ?? "");
@@ -85,7 +86,7 @@ async function fakeChain(o: { attestorCode?: Hex; receipt?: "none" } = {}) {
       case "eth_getCode":
         return o.attestorCode ?? "0x";
       case "eth_getTransactionCount":
-        return "0x0";
+        return `0x${(5 + nonces.length).toString(16)}`; // pending count: 5 earlier transactions, plus those broadcast here
       case "eth_getBlockByNumber":
         return { number: "0x1", hash: `0x${"11".repeat(32)}`, baseFeePerGas: "0x1", timestamp: "0x1", transactions: [] };
       case "eth_maxPriorityFeePerGas":
@@ -95,6 +96,7 @@ async function fakeChain(o: { attestorCode?: Hex; receipt?: "none" } = {}) {
         return "0x2";
       case "eth_sendRawTransaction":
         sent.push(parseTransaction(params[0] as Hex).gas!);
+        nonces.push(parseTransaction(params[0] as Hex).nonce!);
         return `0x${"ab".repeat(32)}`;
       case "eth_getTransactionReceipt":
         if (o.receipt === "none") return null;
@@ -125,7 +127,7 @@ async function fakeChain(o: { attestorCode?: Hex; receipt?: "none" } = {}) {
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { url, sent, attestor, applicant, close: () => server.close() };
+  return { url, sent, nonces, attestor, applicant, close: () => server.close() };
 }
 
 test("a relayed presentation is sent with the gas cap and counted before sending, even when it reverts", async () => {
@@ -160,6 +162,30 @@ test("the free tier is for wallet attestors only, and is capped per importer too
     const r = await relayPresentation(good, { ...env, rpcUrl: chain.url }, ledger);
     assert.equal(r.status, 402, "a fresh attestor does not refill the importer's quota");
     assert.deepEqual(chain.sent, []);
+  } finally {
+    chain.close();
+  }
+});
+
+test("no receipt in time answers 202 with the hash, and the same document cannot be relayed twice at once", async () => {
+  const chain = await fakeChain({ receipt: "none" });
+  try {
+    const e = { ...env, rpcUrl: chain.url, receiptTimeoutMs: 1_500 };
+    const first = relayPresentation(good, e, memoryLedger());
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal((await relayPresentation(good, e, memoryLedger())).status, 409);
+    assert.deepEqual(await first, { status: 202, body: { hash: `0x${"ab".repeat(32)}`, status: "pending" } });
+  } finally {
+    chain.close();
+  }
+});
+
+test("concurrent relays get distinct nonces", async () => {
+  const chain = await fakeChain();
+  try {
+    const e = { ...env, rpcUrl: chain.url, relayerKey: `0x${"13".repeat(32)}` }; // own relayer: a fresh nonce sequence
+    await Promise.all([relayPresentation({ ...good, doc: 0 }, e, memoryLedger()), relayPresentation(good, e, memoryLedger())]);
+    assert.deepEqual([...chain.nonces].sort(), [5, 6]);
   } finally {
     chain.close();
   }
