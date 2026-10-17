@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { type Address, type Hex, parseEventLogs } from "viem";
 import { type CreditView, documentaryCreditAbi } from "@credoc/sdk";
 import { CREDOC_ADDRESS, FROM_BLOCK } from "../../shared/config";
+import { sameAddress } from "../../shared/format";
 import { publicClient, reader } from "./clients";
 
 /**
@@ -111,6 +112,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         for (const e of fresh) {
           if (typeof e.args.creditId === "bigint") pendingCredits.current.add(e.args.creditId);
           if (typeof e.args.offerId === "bigint") pendingOffers.current.add(e.args.offerId);
+          // an identity link is per address and names no credit: every credit to that exporter changes
+          if (e.name === "AgentLinked")
+            for (const c of credits.current.values())
+              if (sameAddress(c.beneficiary, e.args.account as string)) pendingCredits.current.add(c.id);
         }
       }
       if (pendingCredits.current.size === 0 && pendingOffers.current.size === 0) return setStatus("ready");

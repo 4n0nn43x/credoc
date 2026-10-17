@@ -15,7 +15,7 @@ const HUMAN: Record<string, string> = {
   OfferUnavailable: "This offer is no longer available.",
   StaleOffer: "Part of the credit was paid since this offer was made. The financier needs to price it again.",
   NothingOwed: "Nothing is waiting to be withdrawn.",
-  AlreadyLinked: "An identity is already linked to this credit.",
+  AlreadyLinked: "This wallet already has an identity linked. The link is per address and cannot be changed.",
   InsufficientGas: "Not enough gas was provided. Retry, your wallet will estimate it again.",
 };
 
