@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import ApexCharts, { type ApexOptions } from "apexcharts";
+import { Suspense, lazy, useState, type ReactNode } from "react";
+import type { ApexOptions } from "apexcharts";
 import type { Address } from "viem";
 import { ARC } from "@credoc/sdk";
 import { explorerAddress, explorerTx } from "../../shared/config";
 import { amountParts, sameAddress, shortHex, utc, relative } from "../../shared/format";
 import type { StatusInfo } from "../lib/model";
 import { useStore } from "../lib/store";
-import { useTheme } from "../../shared/theme";
 
 /** Osen page header, with the serif title shared with the landing page. */
 export function PageTitle({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
@@ -155,40 +154,14 @@ export function Skeleton({ lines = 3 }: { lines?: number }) {
   );
 }
 
-/** Thin ApexCharts wrapper (ApexCharts 3 matches Osen's chart styles). Toolbar off, ink palette that follows the theme. */
-export function Chart({ options, height = 260 }: { options: ApexOptions; height?: number }) {
-  const dark = useTheme() === "dark";
-  const el = useRef<HTMLDivElement>(null);
-  const chart = useRef<ApexCharts | null>(null);
-  const json = JSON.stringify(options);
-  useEffect(() => {
-    if (!el.current) return;
-    chart.current = new ApexCharts(el.current, {
-      ...options,
-      chart: {
-        fontFamily: "Inter, sans-serif",
-        toolbar: { show: false },
-        zoom: { enabled: false },
-        animations: { enabled: !window.matchMedia("(prefers-reduced-motion: reduce)").matches },
-        foreColor: dark ? "#9a968f" : "#78716c",
-        background: "transparent",
-        ...options.chart,
-        height,
-      },
-      theme: { mode: dark ? "dark" : "light" },
-      tooltip: { theme: dark ? "dark" : "light", ...options.tooltip },
-      grid: { borderColor: dark ? "#2e2d2b" : "#eceae8", strokeDashArray: 3, ...options.grid },
-      colors: options.colors ?? (dark ? ["#ecebe8", "#9a968f", "#57534e"] : ["#191919", "#a8a29e", "#d6d3d1"]),
-      dataLabels: { enabled: false, ...options.dataLabels },
-      legend: { show: (options.series?.length ?? 0) > 1, ...options.legend },
-    });
-    void chart.current.render();
-    return () => {
-      chart.current?.destroy();
-      chart.current = null;
-    };
-    // re-render when the serialized options change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [json, height, dark]);
-  return <div ref={el} />;
+// ApexCharts is large and only the overview and admin pages draw charts: it loads with the first chart
+const LazyChart = lazy(() => import("./chart"));
+
+/** Thin ApexCharts wrapper (see chart.tsx), loaded on first use; the space is kept while it loads. */
+export function Chart(props: { options: ApexOptions; height?: number }) {
+  return (
+    <Suspense fallback={<div style={{ minHeight: props.height ?? 260 }} />}>
+      <LazyChart {...props} />
+    </Suspense>
+  );
 }
