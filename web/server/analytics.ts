@@ -14,6 +14,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { type Address, type Hex, getAddress, isAddress, recoverMessageAddress } from "viem";
+import type { RelayLedger } from "../api/_relay-core";
 import tzCountry from "./tz-country.json" with { type: "json" };
 
 const TZ = tzCountry as Record<string, string>;
@@ -58,15 +59,26 @@ export function openStore(dir: string, secret: string) {
     CREATE INDEX IF NOT EXISTS hits_day ON hits(day);
     CREATE TABLE IF NOT EXISTS events (ts INTEGER, day TEXT, kind TEXT);
     CREATE INDEX IF NOT EXISTS events_day ON events(day);
+    CREATE TABLE IF NOT EXISTS relays (ts INTEGER, key TEXT);
+    CREATE INDEX IF NOT EXISTS relays_key ON relays(key, ts);
   `);
   const cutoff = day(Date.now() - RETENTION_DAYS * 86_400_000);
   db.prepare("DELETE FROM hits WHERE day < ?").run(cutoff);
   db.prepare("DELETE FROM events WHERE day < ?").run(cutoff);
+  db.prepare("DELETE FROM relays WHERE ts < ?").run(Date.now() - 31 * 86_400_000); // the quota window is 30 days
 
   const insertHit = db.prepare("INSERT INTO hits VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
   const insertEvent = db.prepare("INSERT INTO events VALUES (?, ?, ?)");
+  const countRelays = db.prepare("SELECT COUNT(*) AS n FROM relays WHERE key = ? AND ts > ?");
+  const insertRelay = db.prepare("INSERT INTO relays VALUES (?, ?)");
 
   return {
+    /** Free relay quota (api/_relay-core.ts), kept across restarts and deploys. Synchronous, like the check it backs. */
+    relays: {
+      count: (key: string, since: number) => Number((countRelays.get(key, since) as { n: number }).n),
+      add: (key: string, now: number) => void insertRelay.run(now, key),
+    } satisfies RelayLedger,
+
     /** Records a page view. ip and ua only feed the daily visitor hash and are not stored. */
     hit(h: Hit, ip: string, ua: string, now = Date.now()) {
       if (BOT.test(ua)) return;

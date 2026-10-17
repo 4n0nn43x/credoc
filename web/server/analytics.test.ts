@@ -38,6 +38,16 @@ test("visits are counted per day without storing the IP, bots are skipped", () =
   assert.deepEqual(store.stats(30, t).events.map((e) => ({ ...e })), [{ kind: "relay", n: 1 }]);
 });
 
+test("the free relay quota survives a restart", () => {
+  const dir = mkdtempSync(join(tmpdir(), "credoc-relays-"));
+  const now = Date.now();
+  openStore(dir, "s".repeat(32)).relays.add("attestor:0xab", now);
+  const again = openStore(dir, "s".repeat(32)).relays;
+  assert.equal(again.count("attestor:0xab", now - 1000), 1);
+  assert.equal(again.count("attestor:0xab", now), 0, "outside the window");
+  assert.equal(again.count("attestor:0xcd", 0), 0);
+});
+
 test("admin sign-in: only listed wallets, single-use nonce, tamper-proof cookie", async () => {
   const admin = privateKeyToAccount(`0x${"12".repeat(32)}`);
   const other = privateKeyToAccount(`0x${"34".repeat(32)}`);
