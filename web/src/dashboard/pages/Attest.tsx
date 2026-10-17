@@ -27,7 +27,7 @@ const RELAY_ERRORS: Record<string, string> = {
 };
 
 export function Attest() {
-  const { address, wallet } = useWallet();
+  const { address, wallet, wrongChain } = useWallet();
   const { credits, events, now, status, refresh } = useStore();
   const { run, notify } = useTx();
   const [sel, setSel] = useState<string | null>(null);
@@ -64,6 +64,8 @@ export function Attest() {
   const signAndRelay = async () => {
     if (!current || !file || !wallet || !CREDOC_ADDRESS) return;
     const title = titleOf(current);
+    // the signature binds chain.id: a wallet on another network refuses it or signs for nothing
+    if (wrongChain) return notify(title, "failed", "Your wallet is on another network. Switch to Arc first.");
     setBusy(true);
     try {
       const s = await signPresentation(wallet as never, CREDOC_ADDRESS, chain.id, {
