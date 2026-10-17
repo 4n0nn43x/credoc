@@ -436,10 +436,12 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     }
 
     /// @notice The payee renounces the remaining proceeds (irrevocable credits only end early with its consent).
+    ///         Recorded as "cancelled" when the beneficiary decides it, "assignee-cancelled" when a financier who
+    ///         bought the proceeds does: the beneficiary did not choose it, but it still counts as not delivered.
     function cancel(uint256 id) external nonReentrant {
         Credit storage c = _active(id);
         if (msg.sender != c.payee) revert Unauthorized();
-        _refundAll(id, c, "cancelled");
+        _refundAll(id, c, c.payee == c.beneficiary ? "cancelled" : "assignee-cancelled");
         emit CreditClosed(id, false);
     }
 

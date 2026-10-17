@@ -744,6 +744,24 @@ contract DocumentaryCreditTest is Test {
         assertEq(dc.offerCount(), 0);
     }
 
+    /// M-1: a cancel decided by a financier who bought the proceeds is not written as the exporter's "cancelled"
+    function test_review3_M1_assigneeCancelTaggedApart() public {
+        uint256 id = _open(600e6, 400e6);
+        vm.prank(exporter);
+        dc.linkAgent(2);
+        vm.prank(financier);
+        uint256 off = dc.makeOffer(id, 900e6, uint64(block.timestamp + 1 days));
+        vm.prank(exporter);
+        dc.acceptOffer(off);
+        vm.prank(financier);
+        dc.cancel(id);
+        assertEq(reg.count(), 2, "still one entry per refunded tranche");
+        (uint256 agent,, int128 value,,, string memory t2,) = reg.feedbacks(1);
+        assertEq(agent, 2);
+        assertEq(value, 0);
+        assertEq(t2, "assignee-cancelled");
+    }
+
     // ------------------------------------------------------------ settlement fee
 
     function test_fee_takenOnSettlementOnly_andSentToTreasury() public {
