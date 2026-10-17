@@ -789,6 +789,26 @@ contract DocumentaryCreditTest is Test {
         assertLt(used, 1_100_000);
     }
 
+    /// L-3: a proposer can take back its expiry proposal before the other side accepts it
+    function test_review3_L3_expiryProposalWithdrawable() public {
+        uint256 id = _open(1000e6, 0);
+        vm.prank(importer);
+        dc.amendExpiry(id, expiry + 10 days);
+        vm.prank(exporter); // only the proposer
+        vm.expectRevert(DocumentaryCredit.Unauthorized.selector);
+        dc.withdrawExpiryProposal(id);
+        vm.prank(importer);
+        dc.withdrawExpiryProposal(id);
+        assertEq(dc.expiryProposer(id), address(0));
+        vm.prank(exporter); // would have matched the withdrawn proposal: now only a new proposal
+        dc.amendExpiry(id, expiry + 10 days);
+        assertEq(dc.getCredit(id).expiry, expiry);
+        assertEq(dc.expiryProposer(id), exporter);
+        vm.prank(importer); // nothing left to withdraw
+        vm.expectRevert(DocumentaryCredit.Unauthorized.selector);
+        dc.withdrawExpiryProposal(id);
+    }
+
     // ------------------------------------------------------------ settlement fee
 
     function test_fee_takenOnSettlementOnly_andSentToTreasury() public {

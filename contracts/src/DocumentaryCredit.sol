@@ -204,6 +204,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     event CreditClosed(uint256 indexed creditId, bool fullyDelivered);
     event ExpiryProposed(uint256 indexed creditId, address indexed proposer, uint64 newExpiry);
     event ExpiryAmended(uint256 indexed creditId, uint64 newExpiry);
+    event ExpiryProposalWithdrawn(uint256 indexed creditId);
     event OfferMade(
         uint256 indexed offerId, uint256 indexed creditId, address indexed financier, uint128 price, uint64 validUntil
     );
@@ -467,6 +468,14 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
             expiryProposer[id] = msg.sender;
             emit ExpiryProposed(id, msg.sender, newExpiry);
         }
+    }
+
+    /// @notice The proposer takes back its pending expiry proposal, so the other side cannot accept it later.
+    function withdrawExpiryProposal(uint256 id) external {
+        if (expiryProposer[id] != msg.sender) revert Unauthorized();
+        delete proposedExpiry[id];
+        delete expiryProposer[id];
+        emit ExpiryProposalWithdrawn(id);
     }
 
     /// @dev Refunds every unsettled tranche, then records one negative entry per refunded tranche (`outcome`),
