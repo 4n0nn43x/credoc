@@ -17,6 +17,7 @@ const HUMAN: Record<string, string> = {
   NothingOwed: "Nothing is waiting to be withdrawn.",
   AlreadyLinked: "This wallet already has an identity linked. The link is per address and cannot be changed.",
   InsufficientGas: "Not enough gas was provided. Retry, your wallet will estimate it again.",
+  NotForSale: "This plan is not for sale right now.",
 };
 
 /** Plain-English message for a contract error name (as returned by the relayer), if known. */
