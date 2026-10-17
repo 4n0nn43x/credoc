@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ARC, type Reputation } from "@credoc/sdk";
+import type { Address } from "viem";
+import { ARC, type Reputation, documentaryCreditAbi } from "@credoc/sdk";
 import { Amount, Card, Chart, Empty, PageTitle, Skeleton, When, tokenSymbol } from "../components/ui";
 import { CreditStyles, EventLine, describe } from "../components/credit-kit";
+import { CREDOC_ADDRESS } from "../../shared/config";
 import { dateShort, sameAddress, shortHex } from "../../shared/format";
 import { pendingActions } from "../lib/model";
-import { reader } from "../lib/clients";
+import { publicClient, reader } from "../lib/clients";
 import { useStore } from "../lib/store";
+import { useTx } from "../lib/tx";
 import { useWallet } from "../lib/wallet";
 
 const DAY = 86400;
@@ -39,6 +42,58 @@ export function Kpi({ label, hint, children }: { label: string; hint: string; ch
         </div>
       </div>
     </div>
+  );
+}
+
+/** Payments the contract could not push to this wallet (a failed transfer, partner fees) wait in `owed`. */
+function OwedCard({ me }: { me: Address }) {
+  const { events } = useStore();
+  const { run } = useTx();
+  const [owed, setOwed] = useState<{ token: Address; amount: bigint }[]>([]);
+  const [busy, setBusy] = useState<Address | null>(null);
+  const [reads, setReads] = useState(0); // withdrawOwed emits no event: reread after each attempt
+  useEffect(() => {
+    if (!CREDOC_ADDRESS) return;
+    let live = true;
+    Promise.all(
+      [ARC.usdc, ARC.eurc].map(async (token: Address) => ({
+        token,
+        amount: await publicClient.readContract({ address: CREDOC_ADDRESS!, abi: documentaryCreditAbi, functionName: "owed", args: [me, token] }),
+      })),
+    )
+      .then((r) => live && setOwed(r.filter((x) => x.amount > 0n)))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [me, events.length, reads]);
+  if (!owed.length) return null;
+  return (
+    <Card title="Ready to withdraw">
+      <p className="fs-13 text-muted mb-2">
+        The contract could not send these funds to your wallet when they were due, or they are fees owed to you. It keeps them for you
+        until you withdraw.
+      </p>
+      {owed.map(({ token, amount }) => (
+        <div key={token} className="d-flex justify-content-between align-items-center gap-2 py-1">
+          <Amount value={amount} token={token} className="fw-semibold text-dark" />
+          <button
+            type="button"
+            className="btn btn-sm btn-dark"
+            disabled={busy !== null}
+            onClick={() => {
+              setBusy(token);
+              void run(`Withdraw ${tokenSymbol(token)}`, (x) => x.withdrawOwed(token)).finally(() => {
+                setBusy(null);
+                setReads((n) => n + 1);
+              });
+            }}
+          >
+            {busy === token && <i className="ti ti-loader-2 credoc-spin me-1" aria-hidden="true" />}Withdraw
+          </button>
+        </div>
+      ))}
+    </Card>
   );
 }
 
@@ -139,6 +194,8 @@ export function Overview() {
           </Link>
         }
       />
+
+      {me && <OwedCard me={me} />}
 
       <div className="row g-3 mb-3">
         <Kpi label="Locked as importer" hint="Held by the contract until documents arrive">
