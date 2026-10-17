@@ -190,7 +190,19 @@ export function session(env: AdminEnv, cookieHeader: string | undefined, now = D
   const got = Buffer.from(mac);
   if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
   if (Number(exp) < now || !isAddress(addr) || !env.admins.includes(getAddress(addr))) return null;
+  if (revoked.has(mac)) return null;
   return getAddress(addr);
+}
+
+/** Signed-out sessions (token MAC -> expiry), refused until they would have expired anyway. */
+const revoked = new Map<string, number>();
+
+/** Ends a session server-side too: a copied cookie stops working at sign-out, not 8 hours later. */
+export function logout(env: AdminEnv, cookieHeader: string | undefined, now = Date.now()) {
+  if (!session(env, cookieHeader, now)) return; // only real sessions: forged cookies cannot fill the list
+  const [, exp, mac] = /(?:^|;\s*)credoc_admin=([^;]+)/.exec(cookieHeader ?? "")![1]!.split(".");
+  for (const [m, e] of revoked) if (e < now) revoked.delete(m);
+  revoked.set(mac!, Number(exp));
 }
 
 export const sessionCookie = (token: string) =>

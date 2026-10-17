@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
-import { deviceOf, login, loginMessage, openStore, parseHit, session } from "./analytics.ts";
+import { deviceOf, login, loginMessage, logout, openStore, parseHit, session } from "./analytics.ts";
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) Chrome/140";
 
@@ -76,4 +76,10 @@ test("admin sign-in: only listed wallets, single-use nonce, tamper-proof cookie"
   assert.equal(session(env, `credoc_admin=${addr}.${Number(exp) + 1}.${mac}`), null, "expiry cannot be extended");
   assert.equal(session(env, `credoc_admin=${token}`, Number(exp) + 1), null, "expired");
   assert.equal(session({ ...env, admins: [] }, `credoc_admin=${token}`), null, "removed admins lose access");
+
+  const m4 = loginMessage("credoc.xyz");
+  const other4 = await login(env, m4, await admin.signMessage({ message: m4 }), Date.now() + 1);
+  logout(env, `credoc_admin=${token}`);
+  assert.equal(session(env, `credoc_admin=${token}`), null, "signed out on the server too");
+  assert.equal(session(env, `credoc_admin=${other4}`), admin.address, "other sessions stay");
 });

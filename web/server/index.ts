@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
 import { privateKeyToAccount } from "viem/accounts";
 import { envFromProcess, relayPresentation, type RelayEnv } from "../api/_relay-core";
 import { createRpcProxy, rpcAllowed } from "./rpc";
-import { type AdminEnv, adminEnvFromProcess, clearCookie, login, loginMessage, openStore, parseHit, session, sessionCookie } from "./analytics";
+import { type AdminEnv, adminEnvFromProcess, clearCookie, login, loginMessage, logout, openStore, parseHit, session, sessionCookie } from "./analytics";
 // bundled at build time: the image needs no extra file, and a new partner ships with a new image
 import partnersJson from "../partners.json" with { type: "json" };
 
@@ -225,7 +225,10 @@ export function handler(
         if (!token) return json(res, 401, { error: "not an admin wallet, or the message expired" });
         return json(res, 200, { address: token.split(".")[0] }, { "set-cookie": sessionCookie(token) });
       }
-      if (path === "/api/admin/logout" && req.method === "POST") return json(res, 200, {}, { "set-cookie": clearCookie });
+      if (path === "/api/admin/logout" && req.method === "POST") {
+        logout(admin, req.headers.cookie);
+        return json(res, 200, {}, { "set-cookie": clearCookie });
+      }
       const who = session(admin, req.headers.cookie);
       if (!who) return json(res, 401, { error: "sign in first" });
       if (path === "/api/admin/me" && req.method === "GET") return json(res, 200, { address: who });
