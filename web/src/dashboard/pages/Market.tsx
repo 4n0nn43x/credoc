@@ -43,6 +43,7 @@ export function Market() {
   const t = now();
   const repOf = useReputations(credits);
   const [open, setOpen] = useState<CreditRow | null>(null);
+  const [withdrawing, setWithdrawing] = useState<bigint | null>(null);
 
   const market = credits.filter((c) => c.status === 1 && Number(c.expiry) > t && c.outstanding > 0n);
   const best = (c: CreditRow) =>
@@ -133,8 +134,16 @@ export function Market() {
                             <td><span className={`badge-soft tone-${st[1]}`}>{st[0]}</span></td>
                             <td className="text-end">
                               {o.open && (
-                                <button type="button" className="btn btn-sm btn-outline-dark" onClick={() => void run(`Withdraw offer on ${c?.ref ?? `#${o.creditId}`}`, (x) => x.withdrawOffer(o.id))}>
-                                  Withdraw
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-dark"
+                                  disabled={withdrawing !== null}
+                                  onClick={() => {
+                                    setWithdrawing(o.id);
+                                    void run(`Withdraw offer on ${c?.ref ?? `#${o.creditId}`}`, (x) => x.withdrawOffer(o.id)).finally(() => setWithdrawing(null));
+                                  }}
+                                >
+                                  {withdrawing === o.id && <i className="ti ti-loader-2 credoc-spin me-1" aria-hidden="true" />}Withdraw
                                 </button>
                               )}
                             </td>

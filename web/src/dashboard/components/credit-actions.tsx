@@ -122,6 +122,13 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
   const [waiveKey, setWaiveKey] = useState(firstPartial ? `${firstPartial.ti}-${firstPartial.doc}` : "");
   const [agentId, setAgentId] = useState("");
   const [date, setDate] = useState("");
+  // one action in flight at a time: its button spins, the others wait
+  const [busy, setBusy] = useState<string | null>(null);
+  const act = (key: string, title: string, action: Parameters<typeof run>[1]) => {
+    setBusy(key);
+    void run(title, action).finally(() => setBusy(null));
+  };
+  const spin = (key: string) => busy === key && <i className="ti ti-loader-2 credoc-spin me-1" aria-hidden="true" />;
 
   const sections: ReactNode[] = [];
 
@@ -132,8 +139,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
           The credit expired <When ts={c.expiry} now={now} />. Anyone can close an expired credit: the remaining{" "}
           <Amount value={c.outstanding} token={c.token} /> goes back to the importer, never to the caller.
         </p>
-        <button type="button" className={`btn btn-sm ${btn("reclaim")}`} disabled={!me} title={signHint} onClick={() => run("Close and refund", (x) => x.reclaim(id))}>
-          {me ? "Refund the importer" : "Connect to sign"}
+        <button type="button" className={`btn btn-sm ${btn("reclaim")}`} disabled={!me || busy !== null} title={signHint} onClick={() => act("reclaim", "Close and refund", (x) => x.reclaim(id))}>
+          {spin("reclaim")}{me ? "Refund the importer" : "Connect to sign"}
         </button>
       </Section>,
     );
@@ -207,8 +214,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
           </p>
         )}
         {proposalForMe && (
-          <button type="button" className={`btn btn-sm ${btn("extension")} me-2 mb-2`} onClick={() => run("Accept the new expiry", (x) => x.amendExpiry(id, pending!.value))}>
-            Accept new expiry
+          <button type="button" className={`btn btn-sm ${btn("extension")} me-2 mb-2`} disabled={busy !== null} onClick={() => act("accept-expiry", "Accept the new expiry", (x) => x.amendExpiry(id, pending!.value))}>
+            {spin("accept-expiry")}Accept new expiry
           </button>
         )}
         <div className="d-flex gap-2 align-items-center flex-wrap">
@@ -225,13 +232,13 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
           <button
             type="button"
             className="btn btn-sm btn-outline-dark"
-            disabled={!date}
+            disabled={!date || busy !== null}
             onClick={() => {
               const ts = BigInt(Math.floor(Date.parse(`${date}T23:59:59Z`) / 1000));
-              void run("Propose a new expiry", (x) => x.amendExpiry(id, ts));
+              act("propose", "Propose a new expiry", (x) => x.amendExpiry(id, ts));
             }}
           >
-            Propose
+            {spin("propose")}Propose
           </button>
         </div>
         <div className="fs-12 text-muted mt-1">
@@ -298,8 +305,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
         </p>
         <div className="d-flex gap-2">
           <input className="form-control form-control-sm num" style={{ maxWidth: 140 }} inputMode="numeric" placeholder="Agent id" value={agentId} onChange={(e) => setAgentId(e.target.value.replace(/\D/g, ""))} aria-label="ERC-8004 agent id" />
-          <button type="button" className={`btn btn-sm ${btn("identity")}`} disabled={!agentId} onClick={() => run("Link identity", (x) => x.linkAgent(BigInt(agentId)))}>
-            Link
+          <button type="button" className={`btn btn-sm ${btn("identity")}`} disabled={!agentId || busy !== null} onClick={() => act("link", "Link identity", (x) => x.linkAgent(BigInt(agentId)))}>
+            {spin("link")}Link
           </button>
         </div>
       </Section>,
@@ -316,8 +323,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
                 <Amount value={o.price} token={c.token} /> escrowed{" "}
                 <span className="text-muted fs-12">{lapsed ? "(can no longer be accepted)" : <>valid <When ts={o.validUntil} now={now} /></>}</span>
               </div>
-              <button type="button" className={`btn btn-sm ${lapsed ? btn("withdraw") : "btn-outline-dark"}`} onClick={() => run("Withdraw the offer", (x) => x.withdrawOffer(o.id))}>
-                Withdraw
+              <button type="button" className={`btn btn-sm ${lapsed ? btn("withdraw") : "btn-outline-dark"}`} disabled={busy !== null} onClick={() => act(`withdraw-${o.id}`, "Withdraw the offer", (x) => x.withdrawOffer(o.id))}>
+                {spin(`withdraw-${o.id}`)}Withdraw
               </button>
             </div>
           );
