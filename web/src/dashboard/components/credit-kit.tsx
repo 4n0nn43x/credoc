@@ -199,11 +199,11 @@ export function CreditStyles() {
 .credit-stepper { display: flex; gap: 0; }
 .credit-stepper li { flex: 1; position: relative; min-width: 0; padding-right: 8px; }
 .credit-stepper li::before { content: ""; position: absolute; top: 13px; left: 30px; right: 4px; height: 1px; background: var(--osen-border-color); }
-.credit-stepper li.done::before { background: #191919; }
+.credit-stepper li.done::before { background: var(--credoc-ink); }
 .credit-stepper li:last-child::before { display: none; }
-.credit-stepper .dot { position: relative; z-index: 1; width: 27px; height: 27px; border-radius: 50%; border: 1px dashed #a8a29e; background: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; color: #78716c; transition: all .3s; }
-.credit-stepper li.done .dot { background: #191919; border: 1px solid #191919; color: #fff; }
-.credit-stepper li.current .dot { border: 1px solid #191919; color: #191919; box-shadow: 0 0 0 4px rgba(25,25,25,.06); }
+.credit-stepper .dot { position: relative; z-index: 1; width: 27px; height: 27px; border-radius: 50%; border: 1px dashed #a8a29e; background: var(--osen-secondary-bg); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; color: #78716c; transition: all .3s; }
+.credit-stepper li.done .dot { background: var(--credoc-ink); border: 1px solid var(--credoc-ink); color: var(--osen-secondary-bg); }
+.credit-stepper li.current .dot { border: 1px solid var(--credoc-ink); color: var(--credoc-ink); box-shadow: 0 0 0 4px rgba(25,25,25,.06); }
 @media (max-width: 575.98px) {
   .credit-stepper { flex-direction: column; gap: 12px; }
   .credit-stepper li { display: flex; gap: 12px; align-items: center; }
@@ -212,8 +212,8 @@ export function CreditStyles() {
 }
 .credit-cell { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
 .credit-cell.waiting { border: 1px dashed #c8c4c0; color: #78716c; }
-.credit-cell.presented { background: #191919; color: #fff; }
-.credit-cell.waived { background: var(--credoc-paper); color: #191919; border: 1px solid #e7e5e4; }
+.credit-cell.presented { background: var(--credoc-ink); color: var(--osen-secondary-bg); }
+.credit-cell.waived { background: var(--credoc-paper); color: var(--credoc-ink); border: 1px solid #e7e5e4; }
 .credit-cell.na { color: #c8c4c0; }
 .credit-timeline { list-style: none; padding: 0; margin: 0; position: relative; }
 .credit-timeline li { position: relative; padding: 0 0 18px 40px; transition: opacity .35s; }
@@ -223,11 +223,11 @@ export function CreditStyles() {
 .credit-timeline li.hidden-step { opacity: .15; }
 .credit-gantt-row { display: grid; grid-template-columns: minmax(90px, 140px) 1fr; gap: 12px; align-items: center; padding: 6px 0; }
 .credit-gantt-track { position: relative; height: 10px; background: var(--credoc-paper); border-radius: 5px; }
-.credit-gantt-bar { position: absolute; top: 0; bottom: 0; background: #191919; border-radius: 5px; min-width: 4px; }
+.credit-gantt-bar { position: absolute; top: 0; bottom: 0; background: var(--credoc-ink); border-radius: 5px; min-width: 4px; }
 .credit-gantt-bar.late { background: #b7791f; }
 .credit-gantt-today { position: absolute; top: -4px; bottom: -4px; width: 1px; background: #b7791f; }
 .credit-progress { height: 3px; background: var(--credoc-paper); border-radius: 2px; overflow: hidden; width: 120px; }
-.credit-progress > span { display: block; height: 100%; background: #191919; }
+.credit-progress > span { display: block; height: 100%; background: var(--credoc-ink); }
 .kpi-figure { font-size: 1.9rem; line-height: 1.1; }
 .hero-amount { font-size: clamp(2.2rem, 6vw, 3rem); line-height: 1; }
 .min-w-0 { min-width: 0; }

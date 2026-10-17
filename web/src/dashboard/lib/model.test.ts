@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Address, Hex } from "viem";
-import { pendingActions, rolesOf, status, steps } from "./model.ts";
+import { isAcceptable, pendingActions, rolesOf, status, steps } from "./model.ts";
 import type { ChainEvent, CreditRow, OfferRow } from "./store.tsx";
 
 const IMP = "0x00000000000000000000000000000000000000a1" as Address;
@@ -79,9 +79,22 @@ test("stepper marks the current milestone", () => {
 
 test("pending actions per role", () => {
   const c = credit();
-  const offer: OfferRow = { id: 1n, creditId: 1n, financier: FIN, price: 9n, forOutstanding: 10n, validUntil: 900n, open: true, madeAt: 150, tx: "0x01" };
+  const offer: OfferRow = { id: 1n, creditId: 1n, financier: FIN, price: 9n, forOutstanding: 10n, expiry: 1000n, validUntil: 900n, open: true, madeAt: 150, tx: "0x01" };
   assert.deepEqual(pendingActions([c], [offer], FWD, 500).map((a) => a.kind), ["attest"]);
   assert.deepEqual(pendingActions([c], [offer], EXP, 500).map((a) => a.kind), ["offers", "identity"]);
   assert.deepEqual(pendingActions([c], [offer], IMP, 1500).map((a) => a.kind), ["reclaim"]);
   assert.deepEqual(pendingActions([c], [offer], FIN, 950).map((a) => a.kind), ["withdraw"]);
+});
+
+test("an offer is acceptable only on the outstanding and expiry it priced", () => {
+  const c = credit();
+  const offer: OfferRow = { id: 1n, creditId: 1n, financier: FIN, price: 9n, forOutstanding: 10n, expiry: 1000n, validUntil: 900n, open: true, madeAt: 150, tx: "0x01" };
+  assert.equal(isAcceptable(offer, c, 500), true);
+  assert.equal(isAcceptable(offer, c, 901), false); // lapsed
+  assert.equal(isAcceptable({ ...offer, open: false }, c, 500), false);
+  assert.equal(isAcceptable(offer, credit({ outstanding: 5n }), 500), false); // a tranche was paid since
+  const extended = credit({ expiry: 2000n });
+  assert.equal(isAcceptable(offer, extended, 500), false); // the expiry was amended since
+  assert.deepEqual(pendingActions([extended], [offer], EXP, 500).map((a) => a.kind), ["identity"]);
+  assert.deepEqual(pendingActions([extended], [offer], FIN, 500).map((a) => a.kind), ["withdraw"]);
 });

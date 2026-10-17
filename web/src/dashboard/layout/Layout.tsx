@@ -155,7 +155,7 @@ function Topbar({ toggle, openPalette }: { toggle: () => void; openPalette: () =
           </span>
 
           {w.wrongChain && (
-            <button className="btn btn-sm btn-warning" onClick={() => void w.switchChain()}>
+            <button className="btn btn-sm btn-warning" onClick={() => void w.switchChain().catch(() => undefined)}>
               Switch to Arc
             </button>
           )}

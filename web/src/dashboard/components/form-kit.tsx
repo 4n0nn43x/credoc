@@ -49,7 +49,7 @@ export function FileDrop({
   return (
     <div>
       <label
-        className={`d-block border border-dashed rounded-3 text-center mb-0 ${over ? "bg-light" : ""}`}
+        className={`credoc-filedrop position-relative d-block border border-dashed rounded-3 text-center mb-0 ${over ? "bg-light" : ""}`}
         style={{ cursor: "pointer", padding: big ? "2.75rem 1rem" : "1.5rem 1rem", borderWidth: 2, transition: "background .15s" }}
         onDragOver={(e) => {
           e.preventDefault();
@@ -62,7 +62,7 @@ export function FileDrop({
           void take(e.dataTransfer.files[0]);
         }}
       >
-        <input ref={input} type="file" className="d-none" onChange={(e) => void take(e.target.files?.[0])} />
+        <input ref={input} type="file" className="visually-hidden" onChange={(e) => void take(e.target.files?.[0])} />
         {value ? (
           <>
             <i className="ti ti-fingerprint fs-24 text-dark" aria-hidden="true" />

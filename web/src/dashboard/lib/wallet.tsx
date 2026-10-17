@@ -75,10 +75,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const bindInjected = useCallback(async (addr: Address) => {
     const eth = window.ethereum!;
+    // network first, so the wallet never appears bound with an unknown or stale chain
+    const id = Number(await eth.request({ method: "eth_chainId" }));
+    setChainId(id);
     setWallet(createWalletClient({ account: addr, chain, transport: custom(eth) }) as Wallet);
     setAddress(addr);
     setKind("injected");
-    setChainId(Number(await eth.request({ method: "eth_chainId" })));
   }, []);
 
   const connect = useCallback(async () => {
@@ -118,7 +120,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         ],
       });
     }
-    setChainId(chain.id);
+    // what the wallet reports, not what was asked: some wallets resolve before switching or ignore the request
+    setChainId(Number(await eth.request({ method: "eth_chainId" })));
   }, []);
 
   // restore the previous session without prompting, then follow injected account and network changes
@@ -162,7 +165,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       wallet,
       ready,
       kind,
-      wrongChain: kind === "injected" && chainId !== null && chainId !== chain.id,
+      wrongChain: kind === "injected" && chainId !== chain.id, // unknown network counts as wrong
       hasInjected,
       balances,
       connect,

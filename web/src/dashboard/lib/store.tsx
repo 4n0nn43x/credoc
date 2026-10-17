@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { type Address, type Hex, parseEventLogs } from "viem";
 import { type CreditView, documentaryCreditAbi } from "@credoc/sdk";
 import { CREDOC_ADDRESS, FROM_BLOCK } from "../../shared/config";
+import { sameAddress } from "../../shared/format";
 import { publicClient, reader } from "./clients";
 
 /**
@@ -32,6 +33,7 @@ export type OfferRow = {
   financier: Address;
   price: bigint;
   forOutstanding: bigint;
+  expiry: bigint; // the credit expiry the offer priced: acceptable only while it is unchanged
   validUntil: bigint;
   open: boolean;
   madeAt: number;
@@ -64,6 +66,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const credits = useRef(new Map<string, CreditRow>());
   const offers = useRef(new Map<string, OfferRow>());
   const blockTimes = useRef(new Map<bigint, number>());
+  const pendingCredits = useRef(new Set<bigint>());
+  const pendingOffers = useRef(new Set<bigint>());
   const clock = useRef({ chain: Math.floor(Date.now() / 1000), wall: Date.now() });
   const busy = useRef(false);
 
@@ -86,41 +90,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const head = await publicClient.getBlock();
       clock.current = { chain: Number(head.timestamp), wall: Date.now() };
       blockTimes.current.set(head.number, Number(head.timestamp));
-      if (head.number <= scanned.current) return setStatus("ready");
-
-      const fresh: ChainEvent[] = [];
-      for (let from = scanned.current + 1n; from <= head.number; from += CHUNK + 1n) {
-        const to = from + CHUNK > head.number ? head.number : from + CHUNK;
-        const logs = await publicClient.getLogs({ address: CREDOC_ADDRESS, fromBlock: from, toBlock: to });
-        for (const l of parseEventLogs({ abi: documentaryCreditAbi, logs })) {
-          fresh.push({
-            name: l.eventName,
-            args: l.args as Record<string, unknown>,
-            block: l.blockNumber,
-            tx: l.transactionHash,
-            logIndex: l.logIndex,
-            time: await time(l.blockNumber),
-          });
+      if (head.number > scanned.current) {
+        const fresh: ChainEvent[] = [];
+        for (let from = scanned.current + 1n; from <= head.number; from += CHUNK + 1n) {
+          const to = from + CHUNK > head.number ? head.number : from + CHUNK;
+          const logs = await publicClient.getLogs({ address: CREDOC_ADDRESS, fromBlock: from, toBlock: to });
+          const parsed = parseEventLogs({ abi: documentaryCreditAbi, logs });
+          // one batched round trip for the chunk's block times, not one request per log
+          await Promise.all([...new Set(parsed.map((l) => l.blockNumber))].map(time));
+          for (const l of parsed) {
+            fresh.push({
+              name: l.eventName,
+              args: l.args as Record<string, unknown>,
+              block: l.blockNumber,
+              tx: l.transactionHash,
+              logIndex: l.logIndex,
+              time: await time(l.blockNumber),
+            });
+          }
+        }
+        scanned.current = head.number;
+        events.current = [...events.current, ...fresh];
+        // queued until read: a failed read is retried on the next tick instead of being lost
+        for (const e of fresh) {
+          if (typeof e.args.creditId === "bigint") pendingCredits.current.add(e.args.creditId);
+          if (typeof e.args.offerId === "bigint") pendingOffers.current.add(e.args.offerId);
+          // an identity link is per address and names no credit: every credit to that exporter changes
+          if (e.name === "AgentLinked")
+            for (const c of credits.current.values())
+              if (sameAddress(c.beneficiary, e.args.account as string)) pendingCredits.current.add(c.id);
         }
       }
-      scanned.current = head.number;
-      if (fresh.length === 0) return setStatus("ready");
+      if (pendingCredits.current.size === 0 && pendingOffers.current.size === 0) return setStatus("ready");
 
-      const creditIds = new Set<bigint>();
-      const offerIds = new Set<bigint>();
-      for (const e of fresh) {
-        if (typeof e.args.creditId === "bigint") creditIds.add(e.args.creditId);
-        if (typeof e.args.offerId === "bigint") offerIds.add(e.args.offerId);
-      }
+      const creditIds = pendingCredits.current;
+      const offerIds = pendingOffers.current;
       // offers point at credits too: an accepted offer changes the payee
       for (const id of offerIds) {
         const o = offers.current.get(id.toString());
         if (o) creditIds.add(o.creditId);
       }
-      events.current = [...events.current, ...fresh];
 
-      await Promise.all(
-        [...creditIds].map(async (id) => {
+      const results = await Promise.allSettled([
+        ...[...creditIds].map(async (id) => {
           const view = await read.getCredit(id);
           const own = events.current.filter((e) => e.args.creditId === id);
           const opened = own.find((e) => e.name === "CreditOpened")!;
@@ -131,11 +143,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             openTx: opened?.tx ?? ("0x" as Hex),
             events: own,
           });
+          creditIds.delete(id);
         }),
-      );
-      await Promise.all(
-        [...offerIds].map(async (id) => {
-          const [creditId, financier, price, forOutstanding, , validUntil, open] = await publicClient.readContract({
+        ...[...offerIds].map(async (id) => {
+          const [creditId, financier, price, forOutstanding, expiry, validUntil, open] = await publicClient.readContract({
             address: CREDOC_ADDRESS!,
             abi: documentaryCreditAbi,
             functionName: "offers",
@@ -148,16 +159,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             financier,
             price,
             forOutstanding,
+            expiry,
             validUntil,
             open,
             madeAt: made?.time ?? 0,
             tx: made?.tx ?? ("0x" as Hex),
           });
+          offerIds.delete(id);
         }),
-      );
+      ]);
+      // show what was read even if one read failed: that one stays queued
+      setVersion((v) => v + 1);
+      const failed = results.find((r) => r.status === "rejected");
+      if (failed) throw failed.reason;
       setStatus("ready");
       setError(null);
-      setVersion((v) => v + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus((s) => (s === "loading" ? "error" : s));

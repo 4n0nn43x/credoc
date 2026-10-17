@@ -60,6 +60,9 @@ export const passAbi = parseAbi([
   "function usdc() view returns (address)",
   "function buy(address account, uint8 plan, uint16 periods) returns (uint64 until)",
   "event PassBought(address indexed account, uint8 indexed plan, uint64 until, address payer, uint256 paid)",
+  "event PassGranted(address indexed account, uint8 indexed plan, uint64 until)",
+  "error BadParams()",
+  "error NotForSale()",
 ]);
 export const PLAN = { attestor: 1, importer: 2, financier: 3 } as const;
 export type PlanName = keyof typeof PLAN;
@@ -271,6 +274,22 @@ export function quoteAssignment(args: {
   return { price, annualRate, discount: args.outstanding - price };
 }
 
+/**
+ * What the payee receives for the unsettled tranches, as the contract's `_settleFees` computes it, tranche by
+ * tranche: amount - Credoc's fee - the integrator fee, each rounded down. `proFeeBps` applies only if it is
+ * lower than the credit's rate; pass it when the payee holds an active financier plan.
+ */
+export function netProceeds(
+  c: Pick<CreditView, "feeBps" | "integratorFeeBps"> & { tranches: readonly { amount: bigint; settled: boolean }[] },
+  proFeeBps?: number,
+): bigint {
+  const rate = BigInt(proFeeBps !== undefined && proFeeBps < c.feeBps ? proFeeBps : c.feeBps);
+  const integ = BigInt(c.integratorFeeBps);
+  return c.tranches
+    .filter((t) => !t.settled)
+    .reduce((sum, t) => sum + t.amount - (t.amount * rate) / 10_000n - (t.amount * integ) / 10_000n, 0n);
+}
+
 // ---------------------------------------------------------------- client
 
 type Wallet = WalletClient<Transport, Chain | undefined, Account>;
@@ -374,7 +393,7 @@ export class Credoc {
           chain: this.w.chain,
           account: this.w.account,
         });
-        await this.receipt(h);
+        if ((await this.receipt(h)).status !== "success") throw new Error(`approve reverted: ${h}`);
       }
       hash = await this.w.sendTransaction({
         to: this.address,
@@ -430,12 +449,13 @@ export class Credoc {
         chain: this.w.chain,
         account: this.w.account,
       });
-      await this.receipt(h);
+      if ((await this.receipt(h)).status !== "success") throw new Error(`approve reverted: ${h}`);
     }
     const hash = await this.send("makeOffer", [id, price, validUntil]);
     const receipt = await this.publicClient.getTransactionReceipt({ hash });
     const [ev] = parseEventLogs({ abi: documentaryCreditAbi, eventName: "OfferMade", logs: receipt.logs });
-    return { offerId: ev!.args.offerId, hash };
+    if (!ev) throw new Error("OfferMade event not found");
+    return { offerId: ev.args.offerId, hash };
   }
 
   acceptOffer = (offerId: bigint) => this.send("acceptOffer", [offerId]);
@@ -609,7 +629,7 @@ export class Credoc {
         chain: this.w.chain,
         account: this.w.account,
       });
-      await this.receipt(h);
+      if ((await this.receipt(h)).status !== "success") throw new Error(`approve reverted: ${h}`);
     }
     const { request } = await this.publicClient.simulateContract({
       address: pass,
@@ -622,7 +642,8 @@ export class Credoc {
     const receipt = await this.receipt(hash);
     if (receipt.status !== "success") throw new Error(`buy reverted: ${hash}`);
     const [ev] = parseEventLogs({ abi: passAbi, eventName: "PassBought", logs: receipt.logs });
-    return { until: ev!.args.until, hash };
+    if (!ev) throw new Error("PassBought event not found");
+    return { until: ev.args.until, hash };
   }
 
   /** Register an ERC-8004 identity for the connected wallet; returns its agentId. */

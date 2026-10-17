@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { parseUnits } from "viem";
-import { type Reputation, quoteAssignment } from "@credoc/sdk";
+import { type Reputation, netProceeds, quoteAssignment } from "@credoc/sdk";
 import { sameAddress } from "../../shared/format";
 import { Amount, Card, Empty, PageTitle, Skeleton, When, tokenSymbol } from "../components/ui";
 import { FeeNote, SignButton, daysLeft, partyName, recordFacts } from "../components/form-kit";
-import { presentedCount, requiredCount } from "../lib/model";
-import { reader } from "../lib/clients";
+import { isAcceptable, presentedCount, requiredCount } from "../lib/model";
+import { readFees, reader } from "../lib/clients";
 import { type CreditRow, type OfferRow, useStore } from "../lib/store";
 import { useTx } from "../lib/tx";
 import { useWallet } from "../lib/wallet";
@@ -43,11 +43,11 @@ export function Market() {
   const t = now();
   const repOf = useReputations(credits);
   const [open, setOpen] = useState<CreditRow | null>(null);
+  const [withdrawing, setWithdrawing] = useState<bigint | null>(null);
 
-  const live = (o: OfferRow) => o.open && Number(o.validUntil) >= t;
   const market = credits.filter((c) => c.status === 1 && Number(c.expiry) > t && c.outstanding > 0n);
   const best = (c: CreditRow) =>
-    offers.filter((o) => o.creditId === c.id && live(o) && o.forOutstanding === c.outstanding).sort((a, b) => (a.price < b.price ? 1 : -1))[0];
+    offers.filter((o) => isAcceptable(o, c, t)).sort((a, b) => (a.price < b.price ? 1 : -1))[0];
 
   const mine = address ? offers.filter((o) => sameAddress(o.financier, address)) : [];
   const accepted = (o: OfferRow) => events.some((e) => e.name === "ProceedsAssigned" && e.args.offerId === o.id);
@@ -123,7 +123,7 @@ export function Market() {
                     <tbody>
                       {mine.map((o) => {
                         const c = credits.find((x) => x.id === o.creditId);
-                        const st = accepted(o) ? ["Accepted", "success"] : !o.open ? ["Withdrawn", "secondary"] : live(o) ? ["Open", "info"] : ["Lapsed", "warning"];
+                        const st = accepted(o) ? ["Accepted", "success"] : !o.open ? ["Withdrawn", "secondary"] : c && isAcceptable(o, c, t) ? ["Open", "info"] : ["Lapsed", "warning"];
                         return (
                           <tr key={String(o.id)}>
                             <td>
@@ -134,8 +134,16 @@ export function Market() {
                             <td><span className={`badge-soft tone-${st[1]}`}>{st[0]}</span></td>
                             <td className="text-end">
                               {o.open && (
-                                <button type="button" className="btn btn-sm btn-outline-dark" onClick={() => void run(`Withdraw offer on ${c?.ref ?? `#${o.creditId}`}`, (x) => x.withdrawOffer(o.id))}>
-                                  Withdraw
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-dark"
+                                  disabled={withdrawing !== null}
+                                  onClick={() => {
+                                    setWithdrawing(o.id);
+                                    void run(`Withdraw offer on ${c?.ref ?? `#${o.creditId}`}`, (x) => x.withdrawOffer(o.id)).finally(() => setWithdrawing(null));
+                                  }}
+                                >
+                                  {withdrawing === o.id && <i className="ti ti-loader-2 credoc-spin me-1" aria-hidden="true" />}Withdraw
                                 </button>
                               )}
                             </td>
@@ -218,6 +226,19 @@ function OfferDrawer({
   const [price, setPrice] = useState(() => (Number(suggested.price) / 1e6).toFixed(2));
   const [validDays, setValidDays] = useState("3");
   const [busy, setBusy] = useState(false);
+  const { address } = useWallet();
+  // a financier plan lowers the fee on tranches paid to its holder (the contract checks it at each settlement)
+  const [proFeeBps, setProFeeBps] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!reader || !address) return;
+    let live = true;
+    Promise.all([readFees(), reader.plans(address)])
+      .then(([fees, plans]) => live && setProFeeBps(fees && plans?.financier.active ? fees.proFeeBps : undefined))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [address]);
 
   let units: bigint | null = null;
   try {
@@ -225,8 +246,8 @@ function OfferDrawer({
   } catch {
     units = null;
   }
-  // what the financier collects: the outstanding amount less Credoc's settlement fee
-  const net = c.outstanding - (c.outstanding * BigInt(c.feeBps)) / 10_000n;
+  // what the financier collects: each unpaid tranche less the settlement fees, as the contract splits it
+  const net = netProceeds(c, proFeeBps);
   const rate = units && units > 0n ? (Number(net) / Number(units) - 1) * (365 / days) : 0;
   const ret = units ? net - units : 0n;
   const vd = Number(validDays);
@@ -298,7 +319,7 @@ function OfferDrawer({
           <div className="bg-light rounded-3 p-3 my-3 fs-14">
             You pay <Amount value={units ?? 0n} token={c.token} className="fw-semibold text-dark" /> today, you collect{" "}
             <Amount value={net} token={c.token} className="fw-semibold text-dark" /> on delivery
-            {c.feeBps > 0 && <> (after the {c.feeBps / 100}% Credoc fee)</>}: a return of{" "}
+            {net < c.outstanding && <> (after <Amount value={c.outstanding - net} token={c.token} /> of settlement fees)</>}: a return of{" "}
             <Amount value={ret > 0n ? ret : 0n} token={c.token} className="fw-semibold text-dark" /> (<span className="num">{(rate * 100).toFixed(1)}%</span> annualized to expiry).
           </div>
 

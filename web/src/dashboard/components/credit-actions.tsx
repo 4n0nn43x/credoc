@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { netProceeds } from "@credoc/sdk";
 import { sameAddress } from "../../shared/format";
-import { rolesOf } from "../lib/model";
+import { isAcceptable, rolesOf } from "../lib/model";
 import type { CreditRow } from "../lib/store";
 import { useStore } from "../lib/store";
 import { useTx } from "../lib/tx";
@@ -10,6 +11,7 @@ import { Addr, Amount, When } from "./ui";
 import { prettyDoc, who } from "./credit-kit";
 
 const DAY = 86400;
+// the contract caps the new expiry at block time + 730 days: the form offers 729, at midday UTC (as NewCredit does)
 const MAX_TENOR = 730 * DAY;
 
 /** Latest expiry proposal still binding: the contract drops a proposal when its proposer sells the proceeds. */
@@ -95,9 +97,7 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
         t.settled ? [] : t.documents.filter((d) => d.required && !d.satisfied).map((d) => ({ ti, doc: d.doc, partial: t.satisfiedDocs !== 0 })),
       )
     : [];
-  const openOffers = offers.filter(
-    (o) => o.creditId === c.id && o.open && Number(o.validUntil) >= now && o.forOutstanding === c.outstanding,
-  );
+  const openOffers = offers.filter((o) => isAcceptable(o, c, now));
   const myOffers = offers.filter((o) => o.creditId === c.id && o.open && sameAddress(o.financier, me));
 
   // the most urgent available action gets the single solid button
@@ -112,7 +112,7 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
             ? "waive"
             : roles.has("exporter") && active && c.beneficiaryAgent === null
               ? "identity"
-              : myOffers.some((o) => Number(o.validUntil) < now || !active)
+              : myOffers.some((o) => !isAcceptable(o, c, now))
                 ? "withdraw"
                 : null;
   const btn = (key: string) => (primary === key ? "btn-dark" : "btn-outline-dark");
@@ -123,6 +123,13 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
   const [waiveKey, setWaiveKey] = useState(firstPartial ? `${firstPartial.ti}-${firstPartial.doc}` : "");
   const [agentId, setAgentId] = useState("");
   const [date, setDate] = useState("");
+  // one action in flight at a time: its button spins, the others wait
+  const [busy, setBusy] = useState<string | null>(null);
+  const act = (key: string, title: string, action: Parameters<typeof run>[1]) => {
+    setBusy(key);
+    void run(title, action).finally(() => setBusy(null));
+  };
+  const spin = (key: string) => busy === key && <i className="ti ti-loader-2 credoc-spin me-1" aria-hidden="true" />;
 
   const sections: ReactNode[] = [];
 
@@ -133,8 +140,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
           The credit expired <When ts={c.expiry} now={now} />. Anyone can close an expired credit: the remaining{" "}
           <Amount value={c.outstanding} token={c.token} /> goes back to the importer, never to the caller.
         </p>
-        <button type="button" className={`btn btn-sm ${btn("reclaim")}`} disabled={!me} title={signHint} onClick={() => run("Close and refund", (x) => x.reclaim(id))}>
-          {me ? "Refund the importer" : "Connect to sign"}
+        <button type="button" className={`btn btn-sm ${btn("reclaim")}`} disabled={!me || busy !== null} title={signHint} onClick={() => act("reclaim", "Close and refund", (x) => x.reclaim(id))}>
+          {spin("reclaim")}{me ? "Refund the importer" : "Connect to sign"}
         </button>
       </Section>,
     );
@@ -152,7 +159,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
             {openOffers.map((o) => {
               const discount = c.outstanding - o.price;
               const days = Math.max(1, (Number(c.expiry) - now) / DAY);
-              const rate = (Number(discount) / Number(o.price)) * (365 / days);
+              // annualized against what you would collect yourself, net of the settlement fees (no plan discount assumed)
+              const rate = (Number(netProceeds(c) - o.price) / Number(o.price)) * (365 / days);
               return (
                 <li key={o.id.toString()} className="d-flex flex-wrap gap-2 align-items-center justify-content-between py-2">
                   <div className="fs-13">
@@ -207,8 +215,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
           </p>
         )}
         {proposalForMe && (
-          <button type="button" className={`btn btn-sm ${btn("extension")} me-2 mb-2`} onClick={() => run("Accept the new expiry", (x) => x.amendExpiry(id, pending!.value))}>
-            Accept new expiry
+          <button type="button" className={`btn btn-sm ${btn("extension")} me-2 mb-2`} disabled={busy !== null} onClick={() => act("accept-expiry", "Accept the new expiry", (x) => x.amendExpiry(id, pending!.value))}>
+            {spin("accept-expiry")}Accept new expiry
           </button>
         )}
         <div className="d-flex gap-2 align-items-center flex-wrap">
@@ -218,20 +226,20 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
             style={{ maxWidth: 170 }}
             value={date}
             min={new Date((Number(c.expiry) + DAY) * 1000).toISOString().slice(0, 10)}
-            max={new Date((now + MAX_TENOR) * 1000).toISOString().slice(0, 10)}
+            max={new Date((now + MAX_TENOR - DAY) * 1000).toISOString().slice(0, 10)}
             onChange={(e) => setDate(e.target.value)}
             aria-label="New expiry date"
           />
           <button
             type="button"
             className="btn btn-sm btn-outline-dark"
-            disabled={!date}
+            disabled={!date || busy !== null}
             onClick={() => {
-              const ts = BigInt(Math.floor(Date.parse(`${date}T23:59:59Z`) / 1000));
-              void run("Propose a new expiry", (x) => x.amendExpiry(id, ts));
+              const ts = BigInt(Math.floor(Date.parse(`${date}T12:00:00Z`) / 1000));
+              act("propose", "Propose a new expiry", (x) => x.amendExpiry(id, ts));
             }}
           >
-            Propose
+            {spin("propose")}Propose
           </button>
         </div>
         <div className="fs-12 text-muted mt-1">
@@ -298,8 +306,8 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
         </p>
         <div className="d-flex gap-2">
           <input className="form-control form-control-sm num" style={{ maxWidth: 140 }} inputMode="numeric" placeholder="Agent id" value={agentId} onChange={(e) => setAgentId(e.target.value.replace(/\D/g, ""))} aria-label="ERC-8004 agent id" />
-          <button type="button" className={`btn btn-sm ${btn("identity")}`} disabled={!agentId} onClick={() => run("Link identity", (x) => x.linkAgent(BigInt(agentId)))}>
-            Link
+          <button type="button" className={`btn btn-sm ${btn("identity")}`} disabled={!agentId || busy !== null} onClick={() => act("link", "Link identity", (x) => x.linkAgent(BigInt(agentId)))}>
+            {spin("link")}Link
           </button>
         </div>
       </Section>,
@@ -309,15 +317,15 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
     sections.push(
       <Section key="withdraw" title="Your offers">
         {myOffers.map((o) => {
-          const lapsed = Number(o.validUntil) < now || !active || o.forOutstanding !== c.outstanding;
+          const lapsed = !isAcceptable(o, c, now);
           return (
             <div key={o.id.toString()} className="d-flex justify-content-between align-items-center gap-2 py-1">
               <div className="fs-13">
                 <Amount value={o.price} token={c.token} /> escrowed{" "}
                 <span className="text-muted fs-12">{lapsed ? "(can no longer be accepted)" : <>valid <When ts={o.validUntil} now={now} /></>}</span>
               </div>
-              <button type="button" className={`btn btn-sm ${lapsed ? btn("withdraw") : "btn-outline-dark"}`} onClick={() => run("Withdraw the offer", (x) => x.withdrawOffer(o.id))}>
-                Withdraw
+              <button type="button" className={`btn btn-sm ${lapsed ? btn("withdraw") : "btn-outline-dark"}`} disabled={busy !== null} onClick={() => act(`withdraw-${o.id}`, "Withdraw the offer", (x) => x.withdrawOffer(o.id))}>
+                {spin(`withdraw-${o.id}`)}Withdraw
               </button>
             </div>
           );
