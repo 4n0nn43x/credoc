@@ -5,7 +5,7 @@
 #   blocking : workflow audit (zizmor), secrets (gitleaks), dependencies (Trivy, fixable high/critical), contracts and
 #              web tests, Dockerfile lint (hadolint), image (Trivy, fixable high/critical)
 #   report   : SAST (Semgrep), until two weeks of findings justify flipping it to blocking
-# Scanners run as version-pinned containers: no third-party action sees the repository token.
+# Scanners run as containers pinned by digest (tag kept for reading): no third-party action sees the repository token.
 
 name: ci
 
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
       - name: zizmor
-        run: docker run --rm -v "$PWD:/src:ro" ghcr.io/zizmorcore/zizmor:1.29.0 --min-severity medium /src/.github/workflows
+        run: docker run --rm -v "$PWD:/src:ro" ghcr.io/zizmorcore/zizmor:1.29.0@sha256:863026d54f91271b10b60b67ad8054cb37120167e162482597db102b3026a284 --min-severity medium /src/.github/workflows
 
   secrets:
     runs-on: ubuntu-24.04
@@ -43,7 +43,7 @@ jobs:
           fetch-depth: 0             # the whole history: a secret removed later is still exposed
           persist-credentials: false
       - name: gitleaks
-        run: docker run --rm -v "$PWD:/src:ro" zricethezav/gitleaks:v8.30.0 git /src --redact --no-banner --exit-code 1
+        run: docker run --rm -v "$PWD:/src:ro" zricethezav/gitleaks:v8.30.0@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9 git /src --redact --no-banner --exit-code 1
 
   dependencies:
     runs-on: ubuntu-24.04
@@ -53,7 +53,7 @@ jobs:
         with: { persist-credentials: false }
       - name: Trivy (fixable high and critical only)
         run: >-
-          docker run --rm -v "$PWD:/src:ro" aquasec/trivy:0.73.0 fs
+          docker run --rm -v "$PWD:/src:ro" aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c fs
           --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1
           --skip-dirs /src/contracts/lib /src
 
@@ -66,7 +66,7 @@ jobs:
         with: { persist-credentials: false }
       - name: Semgrep
         run: >-
-          docker run --rm -v "$PWD:/src:ro" -w /src semgrep/semgrep:1.172.0 semgrep scan
+          docker run --rm -v "$PWD:/src:ro" -w /src semgrep/semgrep:1.172.0@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b semgrep scan
           --config p/security-audit --config p/secrets --config p/typescript
           --exclude contracts/lib --exclude web/src/dashboard/osen --metrics=off --error
 
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
       - name: Dockerfile lint
-        run: docker run --rm -i hadolint/hadolint:v2.12.0-alpine hadolint - < Dockerfile
+        run: docker run --rm -i hadolint/hadolint:v2.12.0-alpine@sha256:3c206a451cec6d486367e758645269fd7d696c5ccb6ff59d8b03b0e45268a199 hadolint - < Dockerfile
       - name: Build
         env:
           CREDOC_ADDRESS: ${{ vars.VITE_CREDOC_ADDRESS }}
@@ -125,15 +125,16 @@ jobs:
           --build-arg VITE_CREDOC_ADDRESS="$CREDOC_ADDRESS"
           --build-arg VITE_CREDOC_FROM_BLOCK="${CREDOC_FROM_BLOCK:-0}"
           -t "credoc:$SHA" .
-      - name: Trivy image (fixable high and critical only)
-        env: { SHA: "${{ github.sha }}" }
-        run: >-
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.73.0 image
-          --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "credoc:$SHA"
-      - name: Save the scanned image for the deploy job
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      # saved first and scanned as a file: the scanner never gets the Docker socket (root on the runner), and the
+      # archive it scanned is byte for byte the one the deploy job ships
+      - name: Save the image
         env: { SHA: "${{ github.sha }}" }
         run: docker save "credoc:$SHA" | gzip > credoc-image.tgz
+      - name: Trivy image (fixable high and critical only)
+        run: >-
+          docker run --rm -v "$PWD/credoc-image.tgz:/work/credoc-image.tgz:ro"
+          aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c image
+          --input /work/credoc-image.tgz --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

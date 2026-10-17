@@ -58,3 +58,28 @@ test("only read methods pass", () => {
   assert.equal(rpcAllowed({ method: "eth_getLogs" }), true);
   assert.equal(rpcAllowed({ method: "eth_sendRawTransaction" }), false);
 });
+
+test("eth_getLogs is bounded: no tag, no open end, at most 10k blocks", async () => {
+  const arc = fakeArc();
+  const rpc = createRpcProxy(() => "http://arc", arc.f);
+  const refused = async (filter: unknown) => !!((await rpc({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [filter] })) as { error?: unknown }).error;
+  assert.equal(await refused({ fromBlock: "earliest", toBlock: "latest" }), true);
+  assert.equal(await refused({ fromBlock: "0x0" }), true);
+  assert.equal(await refused({}), true);
+  assert.equal(await refused({ fromBlock: "0x0", toBlock: "0x2710" }), true, "10,001 blocks");
+  assert.equal(await refused({ fromBlock: "0x10", toBlock: "0x1" }), true);
+  assert.equal(arc.seen.length, 0, "none of them reached Arc");
+  assert.equal(await refused({ fromBlock: "0x1", toBlock: "0x2710" }), false, "the dashboard's 10k-block chunk");
+  assert.equal(await refused({ blockHash: "0x" + "11".repeat(32) }), false);
+});
+
+test("an oversized answer is served but never cached", async () => {
+  let calls = 0;
+  const big = (async () => {
+    calls++;
+    return Response.json({ jsonrpc: "2.0", id: 1, result: "0x" + "a".repeat(600_000) });
+  }) as unknown as typeof fetch;
+  const rpc = createRpcProxy(() => "http://arc", big);
+  for (let i = 0; i < 2; i++) assert.equal(((await rpc({ jsonrpc: "2.0", id: 1, method: "eth_chainId" })) as { result: string }).result.length, 600_002);
+  assert.equal(calls, 2);
+});

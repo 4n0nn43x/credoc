@@ -5,7 +5,7 @@ import { createServer, get } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_BRAND, brandFor, handler, parsePartners, resolveStatic, rpcAllowed } from "./index.ts";
+import { DEFAULT_BRAND, brandFor, handler, parsePartners, rateLimiter, resolveStatic, rpcAllowed } from "./index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "credoc-static-"));
 mkdirSync(join(root, "app"));
@@ -48,6 +48,45 @@ test("serves pages, assets, health and rejects bad relay calls", async () => {
     assert.equal((await fetch(`${base}/api/relay`, { method: "POST", body: "x".repeat(20_000) })).status, 413);
     // no relayer key configured: refused before any chain call
     assert.equal((await fetch(`${base}/api/relay`, { method: "POST", body: "{}" })).status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("a failing handler answers 500 and a failing analytics write is ignored, the server keeps serving", async () => {
+  const broken = { hit() { throw new Error("disk full"); }, event() { throw new Error("disk full"); } };
+  const env = (): never => {
+    throw new Error("boom");
+  };
+  const server = createServer(handler(root, env, broken as never));
+  await new Promise<void>((r) => server.listen(0, r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    assert.equal((await fetch(`${base}/api/hit`, { method: "POST", body: JSON.stringify({ p: "/" }), headers: { "user-agent": "Mozilla/5.0" } })).status, 204);
+    assert.equal((await fetch(`${base}/api/relay`, { method: "POST", body: "{}" })).status, 500);
+    assert.equal((await fetch(`${base}/healthz`)).status, 200);
+  } finally {
+    server.close();
+  }
+});
+
+test("rate limits: token bucket per client, bounded memory, relays capped per IP", async () => {
+  const limit = rateLimiter(3, 1, 2);
+  assert.deepEqual([1, 2, 3, 4].map(() => limit("a", 1, 0)), [true, true, true, false]);
+  assert.equal(limit("a", 1, 1_000), true, "refills over time");
+  assert.equal(limit("a", 2, 1_000), false, "a batch costs one token per call");
+  limit("b", 1, 1_000);
+  limit("c", 1, 1_000); // only two clients remembered: "a" is forgotten, and starts full again
+  assert.equal(limit("a", 3, 1_000), true);
+
+  const server = createServer(handler(root, () => ({ relayerKey: undefined, contract: undefined })));
+  await new Promise<void>((r) => server.listen(0, r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const codes = [];
+    for (let i = 0; i < 11; i++) codes.push((await fetch(`${base}/api/relay`, { method: "POST", body: "{}" })).status);
+    assert.deepEqual(codes, [...Array(10).fill(503), 429]);
+    assert.equal((await fetch(`${base}/api/relay`, { method: "POST", body: "{}", headers: { "x-forwarded-for": "9.9.9.9" } })).status, 503, "per client");
   } finally {
     server.close();
   }
@@ -104,7 +143,7 @@ test("the RPC proxy only forwards read methods", () => {
 test("the admin API only answers on its own host, and that host is not counted as traffic", async () => {
   const { openStore } = await import("./analytics.ts");
   const { request } = await import("node:http");
-  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-admin-")), "s".repeat(32));
+  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-admin-")));
   const admin = { admins: [], secret: "k".repeat(32), host: "back.example.org" };
   const server = createServer(handler(root, () => ({}), store, admin));
   await new Promise<void>((r) => server.listen(0, r));

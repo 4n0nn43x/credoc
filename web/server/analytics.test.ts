@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
-import { deviceOf, login, loginMessage, openStore, parseHit, session } from "./analytics.ts";
+import { deviceOf, login, loginMessage, logout, openStore, parseHit, session } from "./analytics.ts";
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) Chrome/140";
 
@@ -19,7 +19,7 @@ test("beacons are validated, routes grouped, own host never counted as a referre
 });
 
 test("visits are counted per day without storing the IP, bots are skipped", () => {
-  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-data-")), "s".repeat(32));
+  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-data-")));
   const t = Date.UTC(2026, 9, 13, 12);
   const hit = (ip: string, path = "/", ua = UA, now = t) =>
     store.hit(parseHit({ p: path, r: "https://x.com/post", tz: "Europe/Paris", w: 1440 }, "credoc.xyz")!, ip, ua, now);
@@ -38,6 +38,31 @@ test("visits are counted per day without storing the IP, bots are skipped", () =
   assert.deepEqual(store.stats(30, t).events.map((e) => ({ ...e })), [{ kind: "relay", n: 1 }]);
 });
 
+test("the daily visitor salt is random: the same visitor hashes differently in another process", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const t = Date.UTC(2026, 9, 13, 12);
+  const ids = [1, 2].map(() => {
+    const dir = mkdtempSync(join(tmpdir(), "credoc-salt-"));
+    const store = openStore(dir);
+    const hit = parseHit({ p: "/" }, "credoc.xyz")!;
+    store.hit(hit, "1.1.1.1", UA, t);
+    store.hit(hit, "1.1.1.1", UA, t + 1000);
+    return (new DatabaseSync(join(dir, "credoc.db")).prepare("SELECT DISTINCT visitor FROM hits").all() as { visitor: string }[]).map((r) => r.visitor);
+  });
+  assert.equal(ids[0]!.length, 1, "one visitor within the day");
+  assert.notEqual(ids[0]![0], ids[1]![0], "not derivable from a shared secret and the date");
+});
+
+test("the free relay quota survives a restart", () => {
+  const dir = mkdtempSync(join(tmpdir(), "credoc-relays-"));
+  const now = Date.now();
+  openStore(dir).relays.add("attestor:0xab", now);
+  const again = openStore(dir).relays;
+  assert.equal(again.count("attestor:0xab", now - 1000), 1);
+  assert.equal(again.count("attestor:0xab", now), 0, "outside the window");
+  assert.equal(again.count("attestor:0xcd", 0), 0);
+});
+
 test("admin sign-in: only listed wallets, single-use nonce, tamper-proof cookie", async () => {
   const admin = privateKeyToAccount(`0x${"12".repeat(32)}`);
   const other = privateKeyToAccount(`0x${"34".repeat(32)}`);
@@ -53,8 +78,23 @@ test("admin sign-in: only listed wallets, single-use nonce, tamper-proof cookie"
   assert.equal(await login(env, m2, await other.signMessage({ message: m2 })), null, "not an admin");
   assert.equal(await login(env, "Nonce: deadbeef", "0x00"), null);
 
+  const m3 = loginMessage("credoc.xyz");
+  const forged = m3.replace("credoc.xyz", "evil.example"); // same nonce, another site's text
+  assert.equal(await login(env, forged, await admin.signMessage({ message: forged })), null, "only the exact issued message");
+  assert.equal(await login(env, m3, await admin.signMessage({ message: m3 })), null, "and its nonce is spent");
+
+  const first = loginMessage("credoc.xyz");
+  for (let i = 0; i < 1_000; i++) loginMessage("credoc.xyz");
+  assert.equal(await login(env, first, await admin.signMessage({ message: first })), null, "pending nonces are capped");
+
   const [addr, exp, mac] = token!.split(".");
   assert.equal(session(env, `credoc_admin=${addr}.${Number(exp) + 1}.${mac}`), null, "expiry cannot be extended");
   assert.equal(session(env, `credoc_admin=${token}`, Number(exp) + 1), null, "expired");
   assert.equal(session({ ...env, admins: [] }, `credoc_admin=${token}`), null, "removed admins lose access");
+
+  const m4 = loginMessage("credoc.xyz");
+  const other4 = await login(env, m4, await admin.signMessage({ message: m4 }), Date.now() + 1);
+  logout(env, `credoc_admin=${token}`);
+  assert.equal(session(env, `credoc_admin=${token}`), null, "signed out on the server too");
+  assert.equal(session(env, `credoc_admin=${other4}`), admin.address, "other sessions stay");
 });

@@ -3,7 +3,7 @@
  *
  * Visits: the page sends a small beacon (path, referrer, time zone, screen width). The server stores the day, the path,
  * the referring host, a country derived from the time zone, a device class, and a visitor id that is a hash of the IP
- * and user agent with a secret that changes every day: a visitor can be counted within a day, never followed across
+ * and user agent with a random salt that changes every day: a visitor can be counted within a day, never followed across
  * days, and no IP is stored. Bots and Do Not Track browsers are not counted.
  *
  * Admin: wallets listed in ADMIN_ADDRESSES sign a one-time message; the server answers with an HttpOnly cookie signed
@@ -14,6 +14,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { type Address, type Hex, getAddress, isAddress, recoverMessageAddress } from "viem";
+import type { RelayLedger } from "../api/_relay-core";
 import tzCountry from "./tz-country.json" with { type: "json" };
 
 const TZ = tzCountry as Record<string, string>;
@@ -49,7 +50,10 @@ export function parseHit(body: unknown, host: string): Hit | null {
 export const deviceOf = (width: number, ua: string) =>
   /ipad|tablet/i.test(ua) || (width >= 600 && width < 1024) ? "tablet" : /mobi|android|iphone/i.test(ua) || (width > 0 && width < 600) ? "mobile" : "desktop";
 
-export function openStore(dir: string, secret: string) {
+export function openStore(dir: string) {
+  // random, in memory only, replaced each day: nobody (not even with ADMIN_SECRET) can recompute a visitor id from an
+  // IP afterwards. A restart starts a new salt, so that day's visitors may be counted twice.
+  let salt = { day: "", key: Buffer.alloc(0) };
   mkdirSync(dir, { recursive: true });
   const db = new DatabaseSync(join(dir, "credoc.db"));
   db.exec(`
@@ -58,21 +62,32 @@ export function openStore(dir: string, secret: string) {
     CREATE INDEX IF NOT EXISTS hits_day ON hits(day);
     CREATE TABLE IF NOT EXISTS events (ts INTEGER, day TEXT, kind TEXT);
     CREATE INDEX IF NOT EXISTS events_day ON events(day);
+    CREATE TABLE IF NOT EXISTS relays (ts INTEGER, key TEXT);
+    CREATE INDEX IF NOT EXISTS relays_key ON relays(key, ts);
   `);
   const cutoff = day(Date.now() - RETENTION_DAYS * 86_400_000);
   db.prepare("DELETE FROM hits WHERE day < ?").run(cutoff);
   db.prepare("DELETE FROM events WHERE day < ?").run(cutoff);
+  db.prepare("DELETE FROM relays WHERE ts < ?").run(Date.now() - 31 * 86_400_000); // the quota window is 30 days
 
   const insertHit = db.prepare("INSERT INTO hits VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
   const insertEvent = db.prepare("INSERT INTO events VALUES (?, ?, ?)");
+  const countRelays = db.prepare("SELECT COUNT(*) AS n FROM relays WHERE key = ? AND ts > ?");
+  const insertRelay = db.prepare("INSERT INTO relays VALUES (?, ?)");
 
   return {
+    /** Free relay quota (api/_relay-core.ts), kept across restarts and deploys. Synchronous, like the check it backs. */
+    relays: {
+      count: (key: string, since: number) => Number((countRelays.get(key, since) as { n: number }).n),
+      add: (key: string, now: number) => void insertRelay.run(now, key),
+    } satisfies RelayLedger,
+
     /** Records a page view. ip and ua only feed the daily visitor hash and are not stored. */
     hit(h: Hit, ip: string, ua: string, now = Date.now()) {
       if (BOT.test(ua)) return;
       const d = day(now);
-      const salt = createHmac("sha256", secret).update(d).digest();
-      const visitor = createHash("sha256").update(salt).update(ip).update(ua).digest("hex").slice(0, 16);
+      if (salt.day !== d) salt = { day: d, key: randomBytes(32) }; // the previous day's salt is gone for good
+      const visitor = createHash("sha256").update(salt.key).update(ip).update(ua).digest("hex").slice(0, 16);
       insertHit.run(now, d, h.path, h.referrer, TZ[h.tz] ?? "", deviceOf(h.width, ua), visitor, h.source);
     },
 
@@ -133,14 +148,18 @@ export function adminEnvFromProcess(): AdminEnv | null {
 
 const NONCE_TTL = 5 * 60_000;
 const SESSION_TTL = 8 * 3600_000;
-const nonces = new Map<string, number>();
+const NONCES_MAX = 1_000; // pending sign-ins; past it the oldest is dropped, so /nonce cannot grow memory
+/** nonce -> the exact message issued with it, and when it expires */
+const nonces = new Map<string, { exp: number; message: string }>();
 
 /** A one-time message for the wallet to sign. */
 export function loginMessage(host: string, now = Date.now()) {
-  for (const [n, exp] of nonces) if (exp < now) nonces.delete(n);
+  for (const [n, { exp }] of nonces) if (exp < now) nonces.delete(n);
+  while (nonces.size >= NONCES_MAX) nonces.delete(nonces.keys().next().value!);
   const nonce = randomBytes(16).toString("hex");
-  nonces.set(nonce, now + NONCE_TTL);
-  return `Sign in to the Credoc admin on ${host}\n\nNonce: ${nonce}\nIssued at: ${new Date(now).toISOString()}`;
+  const message = `Sign in to the Credoc admin on ${host}\n\nNonce: ${nonce}\nIssued at: ${new Date(now).toISOString()}`;
+  nonces.set(nonce, { exp: now + NONCE_TTL, message });
+  return message;
 }
 
 const sign = (secret: string, payload: string) => createHmac("sha256", secret).update(payload).digest("base64url");
@@ -149,9 +168,11 @@ const sign = (secret: string, payload: string) => createHmac("sha256", secret).u
 export async function login(env: AdminEnv, message: unknown, signature: unknown, now = Date.now()): Promise<string | null> {
   if (typeof message !== "string" || typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature)) return null;
   const nonce = /\nNonce: ([0-9a-f]{32})\n/.exec(message)?.[1];
-  const exp = nonce ? nonces.get(nonce) : undefined;
-  if (!nonce || !exp || exp < now) return null;
+  const issued = nonce ? nonces.get(nonce) : undefined;
+  if (!nonce || !issued) return null;
   nonces.delete(nonce); // single use, even when the signature turns out wrong
+  // the whole message must be the one issued (host, time), not just any text around a valid nonce
+  if (issued.exp < now || issued.message !== message) return null;
   let who: Address;
   try {
     who = await recoverMessageAddress({ message, signature: signature as Hex });
@@ -172,7 +193,19 @@ export function session(env: AdminEnv, cookieHeader: string | undefined, now = D
   const got = Buffer.from(mac);
   if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
   if (Number(exp) < now || !isAddress(addr) || !env.admins.includes(getAddress(addr))) return null;
+  if (revoked.has(mac)) return null;
   return getAddress(addr);
+}
+
+/** Signed-out sessions (token MAC -> expiry), refused until they would have expired anyway. */
+const revoked = new Map<string, number>();
+
+/** Ends a session server-side too: a copied cookie stops working at sign-out, not 8 hours later. */
+export function logout(env: AdminEnv, cookieHeader: string | undefined, now = Date.now()) {
+  if (!session(env, cookieHeader, now)) return; // only real sessions: forged cookies cannot fill the list
+  const [, exp, mac] = /(?:^|;\s*)credoc_admin=([^;]+)/.exec(cookieHeader ?? "")![1]!.split(".");
+  for (const [m, e] of revoked) if (e < now) revoked.delete(m);
+  revoked.set(mac!, Number(exp));
 }
 
 export const sessionCookie = (token: string) =>
