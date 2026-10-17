@@ -63,6 +63,15 @@ test("admin sign-in: only listed wallets, single-use nonce, tamper-proof cookie"
   assert.equal(await login(env, m2, await other.signMessage({ message: m2 })), null, "not an admin");
   assert.equal(await login(env, "Nonce: deadbeef", "0x00"), null);
 
+  const m3 = loginMessage("credoc.xyz");
+  const forged = m3.replace("credoc.xyz", "evil.example"); // same nonce, another site's text
+  assert.equal(await login(env, forged, await admin.signMessage({ message: forged })), null, "only the exact issued message");
+  assert.equal(await login(env, m3, await admin.signMessage({ message: m3 })), null, "and its nonce is spent");
+
+  const first = loginMessage("credoc.xyz");
+  for (let i = 0; i < 1_000; i++) loginMessage("credoc.xyz");
+  assert.equal(await login(env, first, await admin.signMessage({ message: first })), null, "pending nonces are capped");
+
   const [addr, exp, mac] = token!.split(".");
   assert.equal(session(env, `credoc_admin=${addr}.${Number(exp) + 1}.${mac}`), null, "expiry cannot be extended");
   assert.equal(session(env, `credoc_admin=${token}`, Number(exp) + 1), null, "expired");

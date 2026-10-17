@@ -145,14 +145,18 @@ export function adminEnvFromProcess(): AdminEnv | null {
 
 const NONCE_TTL = 5 * 60_000;
 const SESSION_TTL = 8 * 3600_000;
-const nonces = new Map<string, number>();
+const NONCES_MAX = 1_000; // pending sign-ins; past it the oldest is dropped, so /nonce cannot grow memory
+/** nonce -> the exact message issued with it, and when it expires */
+const nonces = new Map<string, { exp: number; message: string }>();
 
 /** A one-time message for the wallet to sign. */
 export function loginMessage(host: string, now = Date.now()) {
-  for (const [n, exp] of nonces) if (exp < now) nonces.delete(n);
+  for (const [n, { exp }] of nonces) if (exp < now) nonces.delete(n);
+  while (nonces.size >= NONCES_MAX) nonces.delete(nonces.keys().next().value!);
   const nonce = randomBytes(16).toString("hex");
-  nonces.set(nonce, now + NONCE_TTL);
-  return `Sign in to the Credoc admin on ${host}\n\nNonce: ${nonce}\nIssued at: ${new Date(now).toISOString()}`;
+  const message = `Sign in to the Credoc admin on ${host}\n\nNonce: ${nonce}\nIssued at: ${new Date(now).toISOString()}`;
+  nonces.set(nonce, { exp: now + NONCE_TTL, message });
+  return message;
 }
 
 const sign = (secret: string, payload: string) => createHmac("sha256", secret).update(payload).digest("base64url");
@@ -161,9 +165,11 @@ const sign = (secret: string, payload: string) => createHmac("sha256", secret).u
 export async function login(env: AdminEnv, message: unknown, signature: unknown, now = Date.now()): Promise<string | null> {
   if (typeof message !== "string" || typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature)) return null;
   const nonce = /\nNonce: ([0-9a-f]{32})\n/.exec(message)?.[1];
-  const exp = nonce ? nonces.get(nonce) : undefined;
-  if (!nonce || !exp || exp < now) return null;
+  const issued = nonce ? nonces.get(nonce) : undefined;
+  if (!nonce || !issued) return null;
   nonces.delete(nonce); // single use, even when the signature turns out wrong
+  // the whole message must be the one issued (host, time), not just any text around a valid nonce
+  if (issued.exp < now || issued.message !== message) return null;
   let who: Address;
   try {
     who = await recoverMessageAddress({ message, signature: signature as Hex });
