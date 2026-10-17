@@ -651,7 +651,7 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
     ) internal {
         if (agentPlusOne == 0 || address(reputationRegistry).code.length == 0) return;
         if (gasleft() < FEEDBACK_GAS * 64 / 63 + 10_000) revert InsufficientGas();
-        bytes memory call = abi.encodeCall(
+        bytes memory data = abi.encodeCall(
             IReputationRegistry.giveFeedback,
             (
                 agentPlusOne - 1,
@@ -664,7 +664,13 @@ contract DocumentaryCredit is EIP712, ReentrancyGuard, Ownable2Step {
                 keccak256(abi.encode(id, tranche, amount, tag2))
             )
         );
-        (bool ok,) = address(reputationRegistry).call{gas: FEEDBACK_GAS}(call);
+        // no return data is copied (ExcessivelySafeCall pattern): a registry answering megabytes cannot make the
+        // caller pay for the copy outside the FEEDBACK_GAS budget
+        bool ok;
+        address registry = address(reputationRegistry);
+        assembly ("memory-safe") {
+            ok := call(FEEDBACK_GAS, registry, 0, add(data, 0x20), mload(data), 0, 0)
+        }
         if (!ok) {
             skippedFeedback[agentPlusOne - 1]++;
             emit ReputationSkipped(id, agentPlusOne - 1);

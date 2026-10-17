@@ -85,3 +85,12 @@ contract MockRegistries {
         return feedbacks.length;
     }
 }
+
+/// @dev A reputation registry whose every call answers ~288 KB of return data, paid for within the forwarded gas.
+contract ReturnBombRegistry {
+    fallback() external {
+        assembly {
+            return(0, 288000)
+        }
+    }
+}

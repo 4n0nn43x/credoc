@@ -5,7 +5,7 @@ import {Test, Vm} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {DocumentaryCredit, ICredocPass, IIdentityRegistry, IReputationRegistry} from "../src/DocumentaryCredit.sol";
-import {MockToken, MockRegistries} from "./Mocks.sol";
+import {MockToken, MockRegistries, ReturnBombRegistry} from "./Mocks.sol";
 import {CredocPass} from "../src/CredocPass.sol";
 
 /// @dev minimal ERC-1271 smart wallet, to prove contract-wallet attestors work
@@ -760,6 +760,33 @@ contract DocumentaryCreditTest is Test {
         assertEq(agent, 2);
         assertEq(value, 0);
         assertEq(t2, "assignee-cancelled");
+    }
+
+    /// L-1: a registry answering a huge return data must not make the caller pay to copy it
+    function test_review3_L1_returnBombIsNotCopied() public {
+        IERC20[] memory toks = new IERC20[](1);
+        toks[0] = usdc;
+        DocumentaryCredit bombed = new DocumentaryCredit(
+            toks, IIdentityRegistry(address(reg)), IReputationRegistry(address(new ReturnBombRegistry())), address(this), 0
+        );
+        DocumentaryCredit.OpenParams memory p = _params(1000e6, 0);
+        p.applicantAgent = 1 + 1;
+        vm.startPrank(importer);
+        usdc.approve(address(bombed), type(uint256).max);
+        uint256 id = bombed.open(p, "");
+        vm.stopPrank();
+        vm.prank(exporter);
+        bombed.linkAgent(2);
+        vm.prank(forwarder);
+        bombed.present(id, 0, 0, keccak256("bl"));
+        vm.prank(inspector);
+        uint256 g = gasleft();
+        bombed.present(id, 0, 1, keccak256("insp")); // three feedback calls, each answering 288 KB
+        uint256 used = g - gasleft();
+        assertEq(usdc.balanceOf(exporter), 1000e6);
+        assertEq(bombed.skippedFeedback(1), 0);
+        // three callee budgets of 250k plus settlement; copying 3 x 288 KB would add over a million more
+        assertLt(used, 1_100_000);
     }
 
     // ------------------------------------------------------------ settlement fee
