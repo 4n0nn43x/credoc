@@ -3,7 +3,7 @@
  *
  * Visits: the page sends a small beacon (path, referrer, time zone, screen width). The server stores the day, the path,
  * the referring host, a country derived from the time zone, a device class, and a visitor id that is a hash of the IP
- * and user agent with a secret that changes every day: a visitor can be counted within a day, never followed across
+ * and user agent with a random salt that changes every day: a visitor can be counted within a day, never followed across
  * days, and no IP is stored. Bots and Do Not Track browsers are not counted.
  *
  * Admin: wallets listed in ADMIN_ADDRESSES sign a one-time message; the server answers with an HttpOnly cookie signed
@@ -50,7 +50,10 @@ export function parseHit(body: unknown, host: string): Hit | null {
 export const deviceOf = (width: number, ua: string) =>
   /ipad|tablet/i.test(ua) || (width >= 600 && width < 1024) ? "tablet" : /mobi|android|iphone/i.test(ua) || (width > 0 && width < 600) ? "mobile" : "desktop";
 
-export function openStore(dir: string, secret: string) {
+export function openStore(dir: string) {
+  // random, in memory only, replaced each day: nobody (not even with ADMIN_SECRET) can recompute a visitor id from an
+  // IP afterwards. A restart starts a new salt, so that day's visitors may be counted twice.
+  let salt = { day: "", key: Buffer.alloc(0) };
   mkdirSync(dir, { recursive: true });
   const db = new DatabaseSync(join(dir, "credoc.db"));
   db.exec(`
@@ -83,8 +86,8 @@ export function openStore(dir: string, secret: string) {
     hit(h: Hit, ip: string, ua: string, now = Date.now()) {
       if (BOT.test(ua)) return;
       const d = day(now);
-      const salt = createHmac("sha256", secret).update(d).digest();
-      const visitor = createHash("sha256").update(salt).update(ip).update(ua).digest("hex").slice(0, 16);
+      if (salt.day !== d) salt = { day: d, key: randomBytes(32) }; // the previous day's salt is gone for good
+      const visitor = createHash("sha256").update(salt.key).update(ip).update(ua).digest("hex").slice(0, 16);
       insertHit.run(now, d, h.path, h.referrer, TZ[h.tz] ?? "", deviceOf(h.width, ua), visitor, h.source);
     },
 

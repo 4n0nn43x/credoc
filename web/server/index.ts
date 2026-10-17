@@ -8,7 +8,6 @@
 import { createServer, type IncomingMessage, type RequestListener, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
-import { randomBytes } from "node:crypto";
 import { privateKeyToAccount } from "viem/accounts";
 import { envFromProcess, relayPresentation, type RelayEnv } from "../api/_relay-core";
 import { createRpcProxy, rpcAllowed } from "./rpc";
@@ -293,8 +292,7 @@ if (process.env.NODE_ENV === "production") {
   const admin = adminEnvFromProcess();
   let store: Store | null = null;
   try {
-    // without ADMIN_SECRET the visitor hash still rotates, with a secret that only lives as long as the process
-    store = openStore(process.env.DATA_DIR ?? "/data", admin?.secret ?? randomBytes(32).toString("hex"));
+    store = openStore(process.env.DATA_DIR ?? "/data");
   } catch (e) {
     console.warn("analytics disabled:", (e as Error).message); // the site must keep serving without its data volume
   }

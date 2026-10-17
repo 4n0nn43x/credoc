@@ -19,7 +19,7 @@ test("beacons are validated, routes grouped, own host never counted as a referre
 });
 
 test("visits are counted per day without storing the IP, bots are skipped", () => {
-  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-data-")), "s".repeat(32));
+  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-data-")));
   const t = Date.UTC(2026, 9, 13, 12);
   const hit = (ip: string, path = "/", ua = UA, now = t) =>
     store.hit(parseHit({ p: path, r: "https://x.com/post", tz: "Europe/Paris", w: 1440 }, "credoc.xyz")!, ip, ua, now);
@@ -38,11 +38,26 @@ test("visits are counted per day without storing the IP, bots are skipped", () =
   assert.deepEqual(store.stats(30, t).events.map((e) => ({ ...e })), [{ kind: "relay", n: 1 }]);
 });
 
+test("the daily visitor salt is random: the same visitor hashes differently in another process", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const t = Date.UTC(2026, 9, 13, 12);
+  const ids = [1, 2].map(() => {
+    const dir = mkdtempSync(join(tmpdir(), "credoc-salt-"));
+    const store = openStore(dir);
+    const hit = parseHit({ p: "/" }, "credoc.xyz")!;
+    store.hit(hit, "1.1.1.1", UA, t);
+    store.hit(hit, "1.1.1.1", UA, t + 1000);
+    return (new DatabaseSync(join(dir, "credoc.db")).prepare("SELECT DISTINCT visitor FROM hits").all() as { visitor: string }[]).map((r) => r.visitor);
+  });
+  assert.equal(ids[0]!.length, 1, "one visitor within the day");
+  assert.notEqual(ids[0]![0], ids[1]![0], "not derivable from a shared secret and the date");
+});
+
 test("the free relay quota survives a restart", () => {
   const dir = mkdtempSync(join(tmpdir(), "credoc-relays-"));
   const now = Date.now();
-  openStore(dir, "s".repeat(32)).relays.add("attestor:0xab", now);
-  const again = openStore(dir, "s".repeat(32)).relays;
+  openStore(dir).relays.add("attestor:0xab", now);
+  const again = openStore(dir).relays;
   assert.equal(again.count("attestor:0xab", now - 1000), 1);
   assert.equal(again.count("attestor:0xab", now), 0, "outside the window");
   assert.equal(again.count("attestor:0xcd", 0), 0);

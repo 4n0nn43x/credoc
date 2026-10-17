@@ -143,7 +143,7 @@ test("the RPC proxy only forwards read methods", () => {
 test("the admin API only answers on its own host, and that host is not counted as traffic", async () => {
   const { openStore } = await import("./analytics.ts");
   const { request } = await import("node:http");
-  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-admin-")), "s".repeat(32));
+  const store = openStore(mkdtempSync(join(tmpdir(), "credoc-admin-")));
   const admin = { admins: [], secret: "k".repeat(32), host: "back.example.org" };
   const server = createServer(handler(root, () => ({}), store, admin));
   await new Promise<void>((r) => server.listen(0, r));
