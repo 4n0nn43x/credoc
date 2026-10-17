@@ -5,7 +5,7 @@ import { type Reputation, quoteAssignment } from "@credoc/sdk";
 import { sameAddress } from "../../shared/format";
 import { Amount, Card, Empty, PageTitle, Skeleton, When, tokenSymbol } from "../components/ui";
 import { FeeNote, SignButton, daysLeft, partyName, recordFacts } from "../components/form-kit";
-import { presentedCount, requiredCount } from "../lib/model";
+import { isAcceptable, presentedCount, requiredCount } from "../lib/model";
 import { reader } from "../lib/clients";
 import { type CreditRow, type OfferRow, useStore } from "../lib/store";
 import { useTx } from "../lib/tx";
@@ -44,10 +44,9 @@ export function Market() {
   const repOf = useReputations(credits);
   const [open, setOpen] = useState<CreditRow | null>(null);
 
-  const live = (o: OfferRow) => o.open && Number(o.validUntil) >= t;
   const market = credits.filter((c) => c.status === 1 && Number(c.expiry) > t && c.outstanding > 0n);
   const best = (c: CreditRow) =>
-    offers.filter((o) => o.creditId === c.id && live(o) && o.forOutstanding === c.outstanding).sort((a, b) => (a.price < b.price ? 1 : -1))[0];
+    offers.filter((o) => isAcceptable(o, c, t)).sort((a, b) => (a.price < b.price ? 1 : -1))[0];
 
   const mine = address ? offers.filter((o) => sameAddress(o.financier, address)) : [];
   const accepted = (o: OfferRow) => events.some((e) => e.name === "ProceedsAssigned" && e.args.offerId === o.id);
@@ -123,7 +122,7 @@ export function Market() {
                     <tbody>
                       {mine.map((o) => {
                         const c = credits.find((x) => x.id === o.creditId);
-                        const st = accepted(o) ? ["Accepted", "success"] : !o.open ? ["Withdrawn", "secondary"] : live(o) ? ["Open", "info"] : ["Lapsed", "warning"];
+                        const st = accepted(o) ? ["Accepted", "success"] : !o.open ? ["Withdrawn", "secondary"] : c && isAcceptable(o, c, t) ? ["Open", "info"] : ["Lapsed", "warning"];
                         return (
                           <tr key={String(o.id)}>
                             <td>

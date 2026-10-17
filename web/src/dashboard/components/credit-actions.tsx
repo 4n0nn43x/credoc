@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { sameAddress } from "../../shared/format";
-import { rolesOf } from "../lib/model";
+import { isAcceptable, rolesOf } from "../lib/model";
 import type { CreditRow } from "../lib/store";
 import { useStore } from "../lib/store";
 import { useTx } from "../lib/tx";
@@ -95,9 +95,7 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
         t.settled ? [] : t.documents.filter((d) => d.required && !d.satisfied).map((d) => ({ ti, doc: d.doc, partial: t.satisfiedDocs !== 0 })),
       )
     : [];
-  const openOffers = offers.filter(
-    (o) => o.creditId === c.id && o.open && Number(o.validUntil) >= now && o.forOutstanding === c.outstanding,
-  );
+  const openOffers = offers.filter((o) => isAcceptable(o, c, now));
   const myOffers = offers.filter((o) => o.creditId === c.id && o.open && sameAddress(o.financier, me));
 
   // the most urgent available action gets the single solid button
@@ -112,7 +110,7 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
             ? "waive"
             : roles.has("exporter") && active && c.beneficiaryAgent === null
               ? "identity"
-              : myOffers.some((o) => Number(o.validUntil) < now || !active)
+              : myOffers.some((o) => !isAcceptable(o, c, now))
                 ? "withdraw"
                 : null;
   const btn = (key: string) => (primary === key ? "btn-dark" : "btn-outline-dark");
@@ -309,7 +307,7 @@ export function ActionCard({ c, now }: { c: CreditRow; now: number }) {
     sections.push(
       <Section key="withdraw" title="Your offers">
         {myOffers.map((o) => {
-          const lapsed = Number(o.validUntil) < now || !active || o.forOutstanding !== c.outstanding;
+          const lapsed = !isAcceptable(o, c, now);
           return (
             <div key={o.id.toString()} className="d-flex justify-content-between align-items-center gap-2 py-1">
               <div className="fs-13">

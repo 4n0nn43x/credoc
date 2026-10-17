@@ -32,6 +32,7 @@ export type OfferRow = {
   financier: Address;
   price: bigint;
   forOutstanding: bigint;
+  expiry: bigint; // the credit expiry the offer priced: acceptable only while it is unchanged
   validUntil: bigint;
   open: boolean;
   madeAt: number;
@@ -135,7 +136,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
       await Promise.all(
         [...offerIds].map(async (id) => {
-          const [creditId, financier, price, forOutstanding, , validUntil, open] = await publicClient.readContract({
+          const [creditId, financier, price, forOutstanding, expiry, validUntil, open] = await publicClient.readContract({
             address: CREDOC_ADDRESS!,
             abi: documentaryCreditAbi,
             functionName: "offers",
@@ -148,6 +149,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             financier,
             price,
             forOutstanding,
+            expiry,
             validUntil,
             open,
             madeAt: made?.time ?? 0,

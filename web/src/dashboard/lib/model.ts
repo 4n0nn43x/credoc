@@ -73,6 +73,19 @@ export function steps(c: CreditRow, now: number): Step[] {
   return list.map((s, i) => ({ ...s, current: cur === -1 ? i === list.length - 1 : i === cur }));
 }
 
+/** Mirror of acceptOffer's checks: open, still valid, and priced on the credit's current outstanding and expiry. */
+export function isAcceptable(o: OfferRow, c: Pick<CreditRow, "id" | "status" | "outstanding" | "expiry">, now: number): boolean {
+  return (
+    o.open &&
+    o.creditId === c.id &&
+    c.status === 1 &&
+    now <= Number(o.validUntil) &&
+    now <= Number(c.expiry) &&
+    o.forOutstanding === c.outstanding &&
+    o.expiry === c.expiry
+  );
+}
+
 /** What the connected wallet can do right now, most urgent first. */
 export type Action = { creditId: bigint; kind: string; label: string; urgency: number };
 
@@ -93,7 +106,7 @@ export function pendingActions(credits: CreditRow[], offers: OfferRow[], me: Add
       if (proposalOpen) out.push({ creditId: c.id, kind: "extension", label: "Exporter asks for an extension", urgency: 2 });
     }
     if (roles.has("payee")) {
-      const open = offers.filter((o) => o.creditId === c.id && o.open && Number(o.validUntil) >= now);
+      const open = offers.filter((o) => isAcceptable(o, c, now));
       if (open.length) out.push({ creditId: c.id, kind: "offers", label: `${open.length} financing offer${open.length > 1 ? "s" : ""} to review`, urgency: 2 });
       if (proposalOpen) out.push({ creditId: c.id, kind: "extension", label: "Importer proposes a new expiry", urgency: 2 });
     }
@@ -108,7 +121,8 @@ export function pendingActions(credits: CreditRow[], offers: OfferRow[], me: Add
     }
   }
   for (const o of offers) {
-    if (o.open && sameAddress(o.financier, me) && Number(o.validUntil) < now)
+    const c = credits.find((x) => x.id === o.creditId);
+    if (o.open && sameAddress(o.financier, me) && (c ? !isAcceptable(o, c, now) : Number(o.validUntil) < now))
       out.push({ creditId: o.creditId, kind: "withdraw", label: "Lapsed offer: withdraw your escrow", urgency: 1 });
   }
   return out.sort((a, b) => b.urgency - a.urgency);
