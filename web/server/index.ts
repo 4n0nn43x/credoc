@@ -135,7 +135,6 @@ async function readJson(req: IncomingMessage, res: ServerResponse): Promise<{ bo
 const json = (res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}) =>
   send(res, status, JSON.stringify(body), "application/json", { "cache-control": "no-store", ...extra });
 const hostOf = (req: IncomingMessage) => (req.headers.host ?? "").toLowerCase().replace(/:\d+$/, "");
-// only Caddy reaches this server, and it sets X-Forwarded-For
 /** Analytics must never fail a request (full disk, locked database): log and carry on. */
 const quietly = (f: () => void) => {
   try {
@@ -144,6 +143,32 @@ const quietly = (f: () => void) => {
     console.warn("analytics write failed:", (e as Error)?.message);
   }
 };
+
+/**
+ * Token bucket per key (the client IP): `capacity` requests at once, refilled at `perSecond`. Only the most recent
+ * `maxKeys` clients are remembered, so a flood of addresses cannot grow memory.
+ * ponytail: per process and in memory, enough for one container; a shared store if this ever runs replicated.
+ */
+export function rateLimiter(capacity: number, perSecond: number, maxKeys = 10_000) {
+  const buckets = new Map<string, { tokens: number; at: number }>();
+  return (key: string, cost = 1, now = Date.now()): boolean => {
+    const b = buckets.get(key) ?? { tokens: capacity, at: now };
+    b.tokens = Math.min(capacity, b.tokens + ((now - b.at) / 1000) * perSecond);
+    b.at = now;
+    buckets.delete(key); // re-inserted last: the first key is always the least recently seen
+    buckets.set(key, b);
+    if (buckets.size > maxKeys) buckets.delete(buckets.keys().next().value!);
+    if (b.tokens < cost) return false;
+    b.tokens -= cost;
+    return true;
+  };
+}
+
+/**
+ * The client IP. Only Caddy reaches this server (no published port, see deploy/compose.yaml), and Caddy replaces any
+ * X-Forwarded-For sent by a client it does not trust as a proxy, so the first entry is the real client. If the server
+ * were ever exposed directly, this header could be forged and the per-IP limits below bypassed.
+ */
 const ipOf = (req: IncomingMessage) => String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "").split(",")[0]!.trim();
 
 export function handler(
@@ -154,6 +179,12 @@ export function handler(
 ): RequestListener {
   const root = resolve(rootDir);
   const rpc = createRpcProxy(() => env().rpcUrl || ARC_RPC);
+  // per client IP. The dashboard's first load reads the whole history in 10k-block log chunks plus a few calls per
+  // credit, hence a large burst; relays (each one costs the relayer gas) and beacons have their own, tighter buckets.
+  const apiLimit = rateLimiter(3_000, 50); // every API call, each call of an RPC batch counted
+  const relayLimit = rateLimiter(10, 1 / 60);
+  const hitLimit = rateLimiter(30, 0.2);
+  const tooMany = (res: ServerResponse) => json(res, 429, { error: "too many requests" }, { "retry-after": "10" });
   // an unexpected throw answers 500 instead of taking the whole process down with an unhandled rejection
   return async (req, res) => {
     try {
@@ -167,13 +198,15 @@ export function handler(
 
   async function route(req: IncomingMessage, res: ServerResponse) {
     const path = (req.url ?? "/").split("?")[0]!;
+    if (path.startsWith("/api/") && !apiLimit(ipOf(req))) return tooMany(res);
 
     if (path === "/api/hit") {
       if (req.method !== "POST") return send(res, 405, "method not allowed", undefined, { allow: "POST" });
       const r = await readJson(req, res);
       if (!r) return;
       const hit = parseHit(r.body, hostOf(req));
-      if (hit && store && req.headers.dnt !== "1" && hostOf(req) !== admin?.host)
+      // past its quota a client is still answered 204, its beacons are just not stored
+      if (hit && store && req.headers.dnt !== "1" && hostOf(req) !== admin?.host && hitLimit(ipOf(req)))
         quietly(() => store.hit(hit, ipOf(req), String(req.headers["user-agent"] ?? "")));
       res.writeHead(204, { "cache-control": "no-store" });
       return res.end();
@@ -213,6 +246,7 @@ export function handler(
 
     if (path === "/api/relay") {
       if (req.method !== "POST") return send(res, 405, "method not allowed", undefined, { allow: "POST" });
+      if (!relayLimit(ipOf(req))) return tooMany(res);
       const raw = await readBody(req);
       if (raw === null) return send(res, 413, JSON.stringify({ error: "request too large" }), "application/json", { connection: "close" });
       let body: unknown;
@@ -231,6 +265,7 @@ export function handler(
       const r = await readJson(req, res);
       if (!r) return;
       if (!rpcAllowed(r.body)) return json(res, 403, { error: "method not allowed" });
+      if (Array.isArray(r.body) && !apiLimit(ipOf(req), r.body.length - 1)) return tooMany(res);
       return json(res, 200, await rpc(r.body));
     }
 
