@@ -53,6 +53,23 @@ test("serves pages, assets, health and rejects bad relay calls", async () => {
   }
 });
 
+test("a failing handler answers 500 and a failing analytics write is ignored, the server keeps serving", async () => {
+  const broken = { hit() { throw new Error("disk full"); }, event() { throw new Error("disk full"); } };
+  const env = (): never => {
+    throw new Error("boom");
+  };
+  const server = createServer(handler(root, env, broken as never));
+  await new Promise<void>((r) => server.listen(0, r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    assert.equal((await fetch(`${base}/api/hit`, { method: "POST", body: JSON.stringify({ p: "/" }), headers: { "user-agent": "Mozilla/5.0" } })).status, 204);
+    assert.equal((await fetch(`${base}/api/relay`, { method: "POST", body: "{}" })).status, 500);
+    assert.equal((await fetch(`${base}/healthz`)).status, 200);
+  } finally {
+    server.close();
+  }
+});
+
 test("brand per host: validated partners, everything else gets the default", async () => {
   const p = "0x" + "ab".repeat(20);
   const table = parsePartners({

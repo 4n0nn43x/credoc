@@ -136,6 +136,14 @@ const json = (res: ServerResponse, status: number, body: unknown, extra: Record<
   send(res, status, JSON.stringify(body), "application/json", { "cache-control": "no-store", ...extra });
 const hostOf = (req: IncomingMessage) => (req.headers.host ?? "").toLowerCase().replace(/:\d+$/, "");
 // only Caddy reaches this server, and it sets X-Forwarded-For
+/** Analytics must never fail a request (full disk, locked database): log and carry on. */
+const quietly = (f: () => void) => {
+  try {
+    f();
+  } catch (e) {
+    console.warn("analytics write failed:", (e as Error)?.message);
+  }
+};
 const ipOf = (req: IncomingMessage) => String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "").split(",")[0]!.trim();
 
 export function handler(
@@ -146,7 +154,18 @@ export function handler(
 ): RequestListener {
   const root = resolve(rootDir);
   const rpc = createRpcProxy(() => env().rpcUrl || ARC_RPC);
+  // an unexpected throw answers 500 instead of taking the whole process down with an unhandled rejection
   return async (req, res) => {
+    try {
+      await route(req, res);
+    } catch (e) {
+      console.error("request failed:", req.method, (req.url ?? "").split("?")[0], (e as Error)?.message);
+      if (!res.headersSent) send(res, 500, JSON.stringify({ error: "internal error" }), "application/json");
+      else res.destroy();
+    }
+  };
+
+  async function route(req: IncomingMessage, res: ServerResponse) {
     const path = (req.url ?? "/").split("?")[0]!;
 
     if (path === "/api/hit") {
@@ -154,7 +173,8 @@ export function handler(
       const r = await readJson(req, res);
       if (!r) return;
       const hit = parseHit(r.body, hostOf(req));
-      if (hit && store && req.headers.dnt !== "1" && hostOf(req) !== admin?.host) store.hit(hit, ipOf(req), String(req.headers["user-agent"] ?? ""));
+      if (hit && store && req.headers.dnt !== "1" && hostOf(req) !== admin?.host)
+        quietly(() => store.hit(hit, ipOf(req), String(req.headers["user-agent"] ?? "")));
       res.writeHead(204, { "cache-control": "no-store" });
       return res.end();
     }
@@ -202,7 +222,7 @@ export function handler(
         return send(res, 400, JSON.stringify({ error: "invalid JSON" }), "application/json");
       }
       const r = await relayPresentation(body, env(), store?.relays); // no data volume: counted in memory
-      store?.event(r.status < 300 ? "relay" : r.status === 402 ? "relay_quota" : "relay_refused");
+      quietly(() => store?.event(r.status < 300 ? "relay" : r.status === 402 ? "relay_quota" : "relay_refused"));
       return send(res, r.status, JSON.stringify(r.body), "application/json", { "cache-control": "no-store" });
     }
 
@@ -227,7 +247,7 @@ export function handler(
       "x-content-type-options": "nosniff",
     });
     res.end(req.method === "HEAD" ? undefined : data);
-  };
+  }
 }
 
 if (process.env.NODE_ENV === "production") {
